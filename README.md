@@ -42,13 +42,13 @@ The open source Arudion code for the ESP32 Remote for Victron project.
  
 3D printable enclosures for a LilyGo T-Display S3 AMOLED (not touch version, no pins):
 
-	(as pictured above) (not by me) https://www.printables.com/model/513327
-	(by me) https://www.printables.com/model/566325 (best used if you don't intend to control the charger/inverter)
+   https://www.printables.com/model/513327 (as pictured above) (not by me)
+   https://www.printables.com/model/566325 (best used if you don't intend to control the charger/inverter) (by me)
 	  
-       Filament colour:
+  Filament colour:
 	   
-	      Victron's blue colour:    Light Blue
-          Filament colour code: 	RAL 5012 https://en.wikipedia.org/wiki/List_of_RAL_colours
+      Victron's blue colour:    Light Blue
+      Filament colour code: 	RAL 5012 https://en.wikipedia.org/wiki/List_of_RAL_colours
 
 
 ## Support
