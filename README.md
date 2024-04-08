@@ -22,7 +22,8 @@ Monitor:
 
 Control:
 - Charger on/off
-- Inveter on/off  
+- Inveter on/off
+  
 ![components](https://github.com/roblatour/ESP32RemoteForVictron/blob/main/images/image03.jpg)
 
 ## License
