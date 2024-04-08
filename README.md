@@ -22,8 +22,7 @@ Monitor:
 
 Control:
 - Charger on/off
-- Inveter on/off
-- 
+- Inveter on/off  
 ![components](https://github.com/roblatour/ESP32RemoteForVictron/blob/main/images/image03.jpg)
 
 ## License
@@ -42,8 +41,8 @@ The open source Arudion code for the ESP32 Remote for Victron project.
  
 3D printable enclosures for a LilyGo T-Display S3 AMOLED (not touch version, no pins):
 
-   https://www.printables.com/model/513327 (as pictured above) (not by me)
-   https://www.printables.com/model/566325 (best used if you don't intend to control the charger/inverter) (by me)
+- https://www.printables.com/model/513327 (as pictured above) (not by me)
+- https://www.printables.com/model/566325 (best used if you don't intend to control the charger/inverter) (by me)
 	  
 Filament colour:
 	   
