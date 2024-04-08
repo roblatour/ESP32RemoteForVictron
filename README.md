@@ -1,6 +1,6 @@
 # ESP32 Remote for Victron
 
-Rob Latour, 2023
+Rob Latour, 2024
 
 ## Project outline
 
