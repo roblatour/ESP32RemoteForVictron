@@ -220,7 +220,7 @@ void ChangeMultiplusMode(multiplusFunction option) {
   // wait until a choice is made
 
   while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0))
-    msTimer.begin(10);
+    msTimer.begin(100);
 
   bool userChoseOn;
 
@@ -498,7 +498,7 @@ void UpdateScreen() {
 
   sprite.fillSprite(TFT_BLACK);
 
-  // show charger and inveter status
+  // show charger and inverter status
 
   if (GENERAL_SETTINGS_USB_ON_THE_LEFT)
     sprite.setTextDatum(TL_DATUM);
@@ -939,7 +939,7 @@ void onConnectionEstablished() {
       case 2:
         currentMultiplusMode = InverterOnly;
         if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-          Serial.println("Multiplus is in inveter only mode");
+          Serial.println("Multiplus is in inverter only mode");
         break;
       case 3:
         currentMultiplusMode = On;
