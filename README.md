@@ -42,8 +42,9 @@ The open source Arudion code for the ESP32 Remote for Victron project.
  
 3D printable enclosures for a LilyGo T-Display S3 AMOLED (not touch version, no pins):
 
+- https://github.com/Xinyuan-LilyGO/T-Display-S3-AMOLED/tree/main/3D_File (by LylyGo)
 - https://www.printables.com/model/513327 (as pictured above) (by [jeepers01](https://www.printables.com/@jeepers01_100513) )
-- https://www.printables.com/model/566325 (best used if you don't intend to control the charger/inverter) (by me)
+- https://www.printables.com/model/566325 (if you don't intend to control the charger/inverter) (by me)
 	  
 Filament colour:
 	   
