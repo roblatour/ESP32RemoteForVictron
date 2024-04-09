@@ -15,7 +15,7 @@ Monitor:
 - Incoming Grid Power
 - Battery: Percent Charged, Time to Go, Charging/Discharging
 - AC Load
-- Charging status
+- Charger status
 - Inverter status
 
 ![components](https://github.com/roblatour/ESP32RemoteForVictron/blob/main/images/image02.jpg)
