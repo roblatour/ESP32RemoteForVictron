@@ -1,5 +1,7 @@
 #define GENERAL_SETTINGS_USB_ON_THE_LEFT                            true          // set to true to plug in the USB power cable from the left, set to false to plug in the USB power cable from the right
 
+#define GENERAL_SETTINGS_ALLOW_CHANGING_INVERTER_AND_CHARGER_MODES  true          // set to true to allow the user to change the Multiplus charger and inverter modes with the buttons on this device, otherwise to prevent that set to false
+
 #define GENERAL_SETTINGS_SHOW_BATTERY_AS_YELLOW                       40          // show battery as yellow if its percentage charged is at or below this number
 
 #define GENERAL_SETTINGS_SHOW_BATTERY_AS_RED                          20          // show battery as red if its percentage charged is at or below this number                                            

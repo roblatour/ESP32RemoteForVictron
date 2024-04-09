@@ -4,7 +4,7 @@
 
 #define SECRET_SETTING_VICTRON_INSTALLATION_ID  "+"                         // your unique Victron Installation/Portal ID. If you don't know it you can use a "+" in this field but it will be more efficient to use the actual ID
 #define SECRET_SETTING_VICTRON_MULTIPLUS_ID     "+"                         // your unique Victron Multiplus (vebus) three digit ID; if you don't know it you can use a "+" in this field but it will be more efficient to use the actual ID
-                                                                            // note: in either or both case above if you use a '+' you can look in the Serial Monitor output to see what the discovered IDs are, and then come back and change the setting(s) above
+                                                                            // note: in either or both case above if you use a '+' you can look in the Serial Monitor output to see what the discovered IDs are and then come back and change the setting(s) above
 
 
 #define MQTTBroker                              "venus.local"              // may also be an IP address such as 192.168.1.195
