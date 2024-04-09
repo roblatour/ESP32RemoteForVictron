@@ -48,7 +48,7 @@ The open source Arudion code for the ESP32 Remote for Victron project.
 	  
 Filament colour:
 	   
-   Victron's blue colour:	Light Blue
+   Victron's blue colour:	Light Blue  
    Filament colour code:	RAL 5012 https://en.wikipedia.org/wiki/List_of_RAL_colours
 
 ## Support
