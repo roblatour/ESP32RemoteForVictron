@@ -4,6 +4,9 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.1 - integrated a timer for automatically turning the display on/off at specified times
+// version 1   - initial release
+//
 // Design and tested with a Victron Multiplus II 12v system, monitored by a Rapsberry Pi Zero 2 W running Victron Venus Firmware v3.3
 //
 // Compile and upload using Arduino IDE (2.3.2 or greater)
@@ -42,7 +45,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1)";
+const String programVersion = "(Version 1.1)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 String VictronInstallationID = "+";
@@ -63,16 +66,16 @@ float batteryPower = 0.0;
 float ACOutL1Watts = 0.0;
 float ACOutL2Watts = 0.0;
 
-typedef enum multiplusMode { ChargerOnly,
-                             InverterOnly,
-                             On,
-                             Off,
-                             Unknown
+enum multiplusMode { ChargerOnly,
+                     InverterOnly,
+                     On,
+                     Off,
+                     Unknown
 };
 multiplusMode currentMultiplusMode = Unknown;
 
-typedef enum multiplusFunction { Charger,
-                                 Inverter };
+enum multiplusFunction { Charger,
+                         Inverter };
 
 int topButton, bottomButton;
 
@@ -95,11 +98,11 @@ TFT_eSprite sprite = TFT_eSprite(&tft);
 EspMQTTClient client(
   SECRET_SETTINGS_WIFI_SSID,
   SECRET_SETTINGS_WIFI_PASSWORD,
-  MQTTBroker,
-  MQTTUserID,
-  MQTTPassword,
-  MQTTClientName,
-  MQTTPort);
+  SECRET_SETTINGS_MQTT_Broker,
+  SECRET_SETTINGS_MQTT_UserID,
+  SECRET_SETTINGS_MQTT_Password,
+  SECRET_SETTINGS_MQTT_ClientName,
+  SECRET_SETTINGS_MQTT_Port);
 
 unsigned long lastMQTTUpdateReceived = 0;
 
@@ -110,11 +113,44 @@ unsigned long lastMQTTUpdateReceived = 0;
 #include "FireTimer.h"  // Ardiuno Library Manager, by PowerBroker2, https://github.com/PowerBroker2/FireTimer (v1.0.5)
 FireTimer msTimer;
 
-void TurnOffGreenLED() {
+// Time stuff
+#include <ESP32Time.h>
+#include <TimeLib.h>   // version 1.6.1  https://www.arduino.cc/reference/en/libraries/time/
+#include <Timezone.h>  // Include the Timezone library
+#include <WiFi.h>
+#include <time.h>
 
-  int greenLEDPin = 38;
-  pinMode(greenLEDPin, OUTPUT);
-  digitalWrite(greenLEDPin, LOW);
+const char *primaryNTPServer = GENERAL_SETTINGS_PRIMARY_TIME_SERVER;
+const char *secondaryNTPServer = GENERAL_SETTINGS_SECONDARY_TIME_SERVER;
+const char *tertiaryNTPSever = GENERAL_SETTINGS_TERTIARY_TIME_SERVER;
+const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
+
+bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
+unsigned long nextTimeCheck = 0;
+unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0;
+
+bool theDisplayIsCurrentlyOn;
+int sleepHour, sleepMinute, wakeHour, wakeMinute;
+
+// Debug
+bool generalDebugOutput = false;
+bool verboseDebugOutput = false;
+
+void SetGreenLEDOn(bool turnOn) {
+
+  const int greenLEDPin = 38;
+  static bool doOnce = true;
+
+  if (doOnce) {
+
+    pinMode(greenLEDPin, OUTPUT);
+    doOnce = false;
+  };
+
+  if (turnOn)
+    digitalWrite(greenLEDPin, HIGH);
+  else
+    digitalWrite(greenLEDPin, LOW);
 }
 
 void SetupTopAndBottomButtons() {
@@ -137,11 +173,18 @@ void SetupTopAndBottomButtons() {
   };
 }
 
-void RefreshScreen() {
+void RefreshDisplay() {
   lcd_PushColors(0, 0, TFT_WIDTH, TFT_HEIGHT, (uint16_t *)sprite.getPointer());
 }
 
 void ChangeMultiplusMode(multiplusFunction option) {
+
+  // if no choice is made within this timeout period then return to the previous screen without making any changes
+  int numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut = 1;
+
+  unsigned long holdkeepTheDisplayOnUntilAtLeastThisTime = keepTheDisplayOnUntilAtLeastThisTime;
+
+  KeepTheDisplayOnForThisManyMinutes(numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut);
 
   // show the opening prompt
 
@@ -154,9 +197,16 @@ void ChangeMultiplusMode(multiplusFunction option) {
     sprite.setTextColor(TFT_RED, TFT_BLACK);
     sprite.loadFont(NotoSansBold24);
     sprite.drawString("Multiplus mode cannot be changed", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-    RefreshScreen();
+    RefreshDisplay();
     sprite.unloadFont();
     delay(5000);
+
+    // keep the display on for at least one minute more
+    if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
+      KeepTheDisplayOnForThisManyMinutes(1);
+    else
+      keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+
     return;
   };
 
@@ -168,10 +218,10 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
   if (option == Charger) {
     sprite.drawString("Set charger on or off?", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-    RefreshScreen();
+    RefreshDisplay();
   } else {
     sprite.drawString("Set inverter on or off?", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-    RefreshScreen();
+    RefreshDisplay();
   };
 
   // wait here for one second and also, if needed, for the user to release the button that they had previousily pressed to get here
@@ -183,6 +233,20 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
   while (digitalRead(bottomButton) == 0)
     msTimer.begin(50);
+
+  if (millis() > keepTheDisplayOnUntilAtLeastThisTime) {
+
+    if (generalDebugOutput)
+      Serial.println("Timed out waiting for the user to release the button, no change will be applied");
+
+    // keep the display on for at least one minute more
+    if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
+      KeepTheDisplayOnForThisManyMinutes(1);
+    else
+      keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+
+    return;
+  };
 
   // prompt for desired state
 
@@ -213,25 +277,34 @@ void ChangeMultiplusMode(multiplusFunction option) {
     };
   };
 
-  RefreshScreen();
+  RefreshDisplay();
 
   sprite.unloadFont();
 
   // wait until a choice is made
 
-  while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0))
+  while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0) && (millis() < keepTheDisplayOnUntilAtLeastThisTime))
     msTimer.begin(100);
+
+  if (millis() > keepTheDisplayOnUntilAtLeastThisTime) {
+
+    if (generalDebugOutput)
+      Serial.println("Timed out waiting for the user to make a choice, no change will be applied");
+
+    KeepTheDisplayOnForThisManyMinutes(1);
+    return;
+  };
 
   bool userChoseOn;
 
   if (digitalRead(topButton) == 0) {
     userChoseOn = true;
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-      Serial.println("choice is 'ON'");
+    if (generalDebugOutput)
+      Serial.println("Choice is 'ON'");
   } else {
     userChoseOn = false;
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-      Serial.println("choice is 'OFF'");
+    if (generalDebugOutput)
+      Serial.println("Choice is 'OFF'");
   };
 
   // ensure whichever button was last pressed is now released
@@ -312,8 +385,8 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
   if (currentMultiplusMode == desiredMultiplusMode) {
 
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-      Serial.println("no change required to the multiplus mode");
+    if (generalDebugOutput)
+      Serial.println("No change required to the multiplus mode");
 
   } else {
 
@@ -323,23 +396,23 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
       case ChargerOnly:
         modeCodeValue = "1";
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-          Serial.println("set multiplus mode to charger only");
+        if (generalDebugOutput)
+          Serial.println("Set multiplus mode to charger only");
         break;
       case InverterOnly:
         modeCodeValue = "2";
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-          Serial.println("set multiplus mode to inverter only");
+        if (generalDebugOutput)
+          Serial.println("Set multiplus mode to inverter only");
         break;
       case On:
         modeCodeValue = "3";
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-          Serial.println("set multiplus mode to on");
+        if (generalDebugOutput)
+          Serial.println("Set multiplus mode to on");
         break;
       case Off:
         modeCodeValue = "4";
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-          Serial.println("set multiplus mode to off");
+        if (generalDebugOutput)
+          Serial.println("Set multiplus mode to off");
         break;
     };
 
@@ -351,30 +424,47 @@ void ChangeMultiplusMode(multiplusFunction option) {
     client.publish("W/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode", "{\"value\": " + modeCodeValue + "}");
     delay(250);
   };
+
+  // keep the display on for at least one minute more
+  if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
+    KeepTheDisplayOnForThisManyMinutes(1);
+  else
+    keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
 };
 
 void CheckButtons() {
 
-  if (GENERAL_SETTINGS_ALLOW_CHANGING_INVERTER_AND_CHARGER_MODES) {
+  if (theDisplayIsCurrentlyOn) {
 
-    // The top button is used to turn on/off the charger
-    // The bottom button is used to turn on/off the inverter
+    if (GENERAL_SETTINGS_ALLOW_CHANGING_INVERTER_AND_CHARGER_MODES) {
 
-    if (digitalRead(topButton) == 0)
-      ChangeMultiplusMode(Charger);
+      // The top button is used to turn on/off the charger
+      // The bottom button is used to turn on/off the inverter
 
-    if (digitalRead(bottomButton) == 0)
-      ChangeMultiplusMode(Inverter);
+      if (digitalRead(topButton) == 0)
+        ChangeMultiplusMode(Charger);
+
+      if (digitalRead(bottomButton) == 0)
+        ChangeMultiplusMode(Inverter);
+    };
+
+  } else {
+
+    if ((digitalRead(topButton) == 0) || (digitalRead(bottomButton) == 0)) {
+
+      SetTheDisplayOn(true);
+
+      // ensure whichever button was last pressed is now released
+      while (digitalRead(topButton) == 0)
+        msTimer.begin(50);
+
+      while (digitalRead(bottomButton) == 0)
+        msTimer.begin(50);
+
+      KeepTheDisplayOnForThisManyMinutes(1);
+    };
   };
 }
-
-void SetupDisplayOrientation() {
-
-  if (GENERAL_SETTINGS_USB_ON_THE_LEFT)
-    lcd_setRotation(3);
-  else
-    lcd_setRotation(1);
-};
 
 String ConvertSecondstoDayHoursMinutes(int n) {
 
@@ -419,12 +509,195 @@ String ConvertToStringWithAFixedNumberOfDecimalPlaces(float f, int numberOfDecim
   return returnValue;
 }
 
-void UpdateScreen() {
+void printLocalTime() {
 
-  static unsigned long nextScreenUpdate = 0;
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    if (generalDebugOutput)
+      Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S zone %Z %z ");
+  } else {
+    if (generalDebugOutput)
+      Serial.println("Failed to obtain time 1");
+  };
+}
 
-  // only update the screen at intervals set by the value in GENERAL_SETTINGS_SECONDS_BETWEEN_SCREEN_UPDATES
-  if (millis() < (nextScreenUpdate + GENERAL_SETTINGS_SECONDS_BETWEEN_SCREEN_UPDATES * 1000))
+bool SetTime() {
+
+  bool returnValue;
+
+  if (generalDebugOutput)
+    Serial.println("Setting time ... ");
+
+  // configure NTP Server
+  configTime(0, 0, primaryNTPServer, secondaryNTPServer, tertiaryNTPSever);
+
+  // set the time zone
+  setenv("TZ", timeZone, 1);
+  tzset();
+
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+
+    time_t t = mktime(&timeinfo);
+    struct timeval now = { .tv_sec = t };
+    settimeofday(&now, NULL);
+    if (generalDebugOutput)
+      Serial.printf("Time set to: %s", asctime(&timeinfo));
+    returnValue = true;
+
+  } else {
+
+    if (generalDebugOutput)
+      Serial.println("Failed to obtain time from time server");
+    returnValue = false;
+  };
+
+  if (generalDebugOutput)
+    msTimer.begin(200);
+
+  return returnValue;
+}
+
+void KeepTheDisplayOnForThisManyMinutes(int minutes) {
+
+  keepTheDisplayOnUntilAtLeastThisTime = millis() + minutes * 60 * 1000;
+
+  if (generalDebugOutput) {
+    Serial.print("Keep display active for this many minutes: ");
+    Serial.println(minutes);
+  };
+}
+
+
+void RefreshTimeOnceADay(bool initialTimeSetRequest = false) {
+
+  static bool pendingInitialTimeSetRequest = true;
+
+  if (pendingInitialTimeSetRequest)
+    if (!initialTimeSetRequest)
+      return;
+
+  if (millis() > nextTimeCheck) {
+
+    if (SetTime())
+      nextTimeCheck = millis() + 24 * 60 * 60 * 1000;  // update the time again in 24 hours
+    else {
+      int checkAgainInThisManyMinutes = 20;
+      nextTimeCheck = millis() + checkAgainInThisManyMinutes * 60 * 1000;
+      // keep the display on until the time can be successfully retrieved from the NTP server
+      KeepTheDisplayOnForThisManyMinutes(checkAgainInThisManyMinutes + 1);
+    };
+  };
+
+  pendingInitialTimeSetRequest = false;
+};
+
+bool ShouldTheDisplayBeOn() {
+
+  static int timeToWake = wakeHour * 60 + wakeMinute;
+  static int timeToSleep = sleepHour * 60 + sleepMinute;
+
+  static int lastMinuteChecked = -1;
+  static bool theDisplayHadBeenPreviousilyKeptOn = true;
+  static bool lastReturnValue = true;
+
+  bool returnValue = lastReturnValue;
+
+  if (turnOnDisplayAtSpecificTimesOnly) {
+
+    if (timeToWake == timeToSleep) {
+
+      // the display should only be set to on if the current time is less than or equal to keepTheDisplayOnUntilAtLeastThisTime
+      returnValue = (millis() <= keepTheDisplayOnUntilAtLeastThisTime);
+
+    } else {
+
+      if (millis() <= keepTheDisplayOnUntilAtLeastThisTime) {
+
+        theDisplayHadBeenPreviousilyKeptOn = true;
+        returnValue = true;
+
+      } else {
+
+        // Get the utc time
+        time_t utc_now = time(nullptr);
+
+        // the detailed time checking logic below is only performed:
+        //     once a minute when the seconds first reach zero
+        //     or
+        //     when the keepTheDisplayOnUntilAtLeastThisTime had previousily been kept on but no longer needs to be given the passing of time
+        //  otherwise
+        //     return the previousily returned value
+
+        int iSecond = second(utc_now);
+
+        if ((iSecond == 0) || (theDisplayHadBeenPreviousilyKeptOn)) {
+
+          theDisplayHadBeenPreviousilyKeptOn = false;
+
+          // get the current local time
+          tm *timeinfo = localtime(&utc_now);
+
+          int iMinute = timeinfo->tm_min;
+
+          if (iMinute == lastMinuteChecked)
+
+            returnValue = lastReturnValue;
+
+          else {
+
+            lastMinuteChecked = iMinute;
+
+            int iHour = timeinfo->tm_hour;
+
+            if (timeToSleep > timeToWake) {
+
+              // as an example: wake up at 8 am and go to sleep at 10 pm
+
+              if ((iHour < wakeHour) || ((iHour == wakeHour) && (iMinute < wakeMinute)) || (iHour > sleepHour) || ((iHour == sleepHour) && (iMinute >= sleepMinute)))
+                returnValue = false;
+              else
+                returnValue = true;
+
+            } else {
+
+              // as an example: wake up at 10 pm and go to sleep at 8 am
+
+              if ((iHour < sleepHour) || ((iHour == sleepHour) && (iMinute < sleepMinute)) || (iHour > wakeHour) || ((iHour == wakeHour) && (iMinute >= wakeMinute)))
+                returnValue = true;
+              else
+                returnValue = false;
+            };
+          };
+        };
+      };
+    };
+
+    lastReturnValue = returnValue;
+  };
+
+  return returnValue;
+}
+
+void UpdateDisplay() {
+
+  static unsigned long nextDisplayUpdate = 0;
+
+  // turn on or off the display as needed
+  bool theDisplayShouldBeOn = ShouldTheDisplayBeOn();
+
+  if (theDisplayIsCurrentlyOn && !theDisplayShouldBeOn)
+    SetTheDisplayOn(false);
+
+  if (!theDisplayIsCurrentlyOn && theDisplayShouldBeOn)
+    SetTheDisplayOn(true);
+
+  // only update the display at intervals set by the value in GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES
+  if (millis() < (nextDisplayUpdate + GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000))
+    return;
+
+  // only update the display if it is on
+  if (!theDisplayShouldBeOn)
     return;
 
   // if the connection is not yet established, or had been lost then display an appropriate message
@@ -436,7 +709,7 @@ void UpdateScreen() {
     sprite.setTextDatum(MC_DATUM);
     sprite.setTextColor(TFT_SKYBLUE, TFT_BLACK);
     sprite.drawString("Awaiting Wi-Fi connection", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-    RefreshScreen();
+    RefreshDisplay();
     sprite.unloadFont();
     return;
   };
@@ -448,7 +721,7 @@ void UpdateScreen() {
     sprite.setTextDatum(MC_DATUM);
     sprite.setTextColor(TFT_SKYBLUE, TFT_BLACK);
     sprite.drawString("Awaiting MQTT connection", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-    RefreshScreen();
+    RefreshDisplay();
     sprite.unloadFont();
     return;
   };
@@ -460,12 +733,12 @@ void UpdateScreen() {
     sprite.setTextDatum(MC_DATUM);
     sprite.setTextColor(TFT_RED, TFT_BLACK);
     sprite.drawString("MQTT data updates have stopped", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-    RefreshScreen();
+    RefreshDisplay();
     sprite.unloadFont();
     return;
   };
 
-  // wait until data for all datapoints has been received prior to showing the screen
+  // wait until data for all datapoints has been received prior to showing the display
   // while waiting display an appropriate message
 
   if (awaitingInitialTrasmissionOfAllDataPoints) {
@@ -473,7 +746,7 @@ void UpdateScreen() {
     for (int i = 0; i < dataPoints; i++)
       if (awaitingDataToBeReceived[i]) {
 
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+        if (verboseDebugOutput)
           Serial.println("Awating data on data point " + String(i));
 
         sprite.fillSprite(TFT_BLACK);
@@ -481,7 +754,7 @@ void UpdateScreen() {
         sprite.setTextDatum(MC_DATUM);
         sprite.setTextColor(TFT_SKYBLUE, TFT_BLACK);
         sprite.drawString("Awaiting data", TFT_WIDTH / 2, TFT_HEIGHT / 2);
-        RefreshScreen();
+        RefreshDisplay();
         sprite.unloadFont();
 
         return;
@@ -490,7 +763,7 @@ void UpdateScreen() {
     awaitingInitialTrasmissionOfAllDataPoints = false;
   };
 
-  nextScreenUpdate = millis() + GENERAL_SETTINGS_SECONDS_BETWEEN_SCREEN_UPDATES * 1000;
+  nextDisplayUpdate = millis() + GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000;
 
   int x, y;
 
@@ -695,7 +968,7 @@ void UpdateScreen() {
     };
   };
 
-  RefreshScreen();
+  RefreshDisplay();
 }
 
 void ResetGlobals() {
@@ -735,8 +1008,8 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
     client.publish("R/" + VictronInstallationID + "/keepalive", "");
 
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-      Serial.println("keep alive request sent");
+    if (verboseDebugOutput)
+      Serial.println("Keep alive request sent");
 
     msTimer.begin(100);
   };
@@ -747,51 +1020,20 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
   };
 }
 
-void onConnectionEstablished() {
-
-  if (VictronInstallationID == "+") {
-
-    // Let's find the Victron Installation ID
-
-    client.subscribe("N/+/system/0/Serial", [](const String &topic, const String &payload) {
-      client.unsubscribe("N/+/system/0/Serial");
-      String mytopic = String(topic);
-      Serial.println("Topic: " + mytopic);
-      VictronInstallationID = mytopic.substring(2, 14);
-      Serial.println("*** Discovered Installation ID: " + VictronInstallationID);
-
-      onConnectionEstablished();
-      return;
-    });
-
-    return;
-  };
-
-  if (MultiplusThreeDigitID == "+") {
-
-    // Let's find the Multiplus three digit ID
-
-    client.subscribe("N/" + VictronInstallationID + "/vebus/+/Mode", [](const String &topic, const String &payload) {
-      client.unsubscribe("N/" + VictronInstallationID + "/vebus/+/Mode");
-      String mytopic = String(topic);
-      Serial.println("Topic: " + mytopic);
-      MultiplusThreeDigitID = mytopic.substring(21, 24);
-      Serial.println("*** Discovered Multiplus three digit ID: " + MultiplusThreeDigitID);
-
-      onConnectionEstablished();
-      return;
-    });
-
-    // a keep alive request is required for Venus to publish the topic subscribed to above
-    KeepMQTTAlive(true);
-
-    return;
-  };
+void MassSubscribe() {
 
   // at this point we have the VictronInstallationID and the MultiplusThreeDigitID so let's get the rest of the data
 
+  if (generalDebugOutput)
+    Serial.println("Subscribing");
+
   String commonTopicStartString = "N/" + VictronInstallationID + "/system/0/";
   String multiplusModeTopicString = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+
+  // reset global variables so we will not start displaying information until all the subscribed data has been received
+  ResetGlobals();
+
+  // get the data
 
   // Grid (L1)
 
@@ -801,10 +1043,10 @@ void onConnectionEstablished() {
       if (awaitingDataToBeReceived[0])
         awaitingDataToBeReceived[0] = false;
       String response = String(payload);
-      DynamicJsonDocument doc(256);
+      JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
       gridInL1Watts = doc["value"].as<float>();
-      if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+      if (verboseDebugOutput)
         Serial.println("gridInL1Watts " + String(gridInL1Watts));
       lastMQTTUpdateReceived = millis();
     });
@@ -821,10 +1063,10 @@ void onConnectionEstablished() {
       if (awaitingDataToBeReceived[1])
         awaitingDataToBeReceived[1] = false;
       String response = String(payload);
-      DynamicJsonDocument doc(256);
+      JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
       solarWatts = doc["value"].as<float>();
-      if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+      if (verboseDebugOutput)
         Serial.println("solarWatts " + String(solarWatts));
       lastMQTTUpdateReceived = millis();
     });
@@ -841,10 +1083,10 @@ void onConnectionEstablished() {
     if (awaitingDataToBeReceived[2])
       awaitingDataToBeReceived[2] = false;
     String response = String(payload);
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     batterySOC = doc["value"].as<float>();
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+    if (verboseDebugOutput)
       Serial.println("batterySOC " + String(batterySOC));
     lastMQTTUpdateReceived = millis();
   });
@@ -855,10 +1097,10 @@ void onConnectionEstablished() {
     if (awaitingDataToBeReceived[3])
       awaitingDataToBeReceived[3] = false;
     String response = String(payload);
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     batteryTTG = doc["value"].as<float>();
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+    if (verboseDebugOutput)
       Serial.println("batteryTTG " + String(batteryTTG));
     lastMQTTUpdateReceived = millis();
   });
@@ -869,10 +1111,10 @@ void onConnectionEstablished() {
     if (awaitingDataToBeReceived[4])
       awaitingDataToBeReceived[4] = false;
     String response = String(payload);
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     batteryPower = doc["value"].as<float>();
-    if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+    if (verboseDebugOutput)
       Serial.println("batteryPower " + String(batteryPower));
     lastMQTTUpdateReceived = millis();
   });
@@ -886,10 +1128,10 @@ void onConnectionEstablished() {
       if (awaitingDataToBeReceived[5])
         awaitingDataToBeReceived[5] = false;
       String response = String(payload);
-      DynamicJsonDocument doc(256);
+      JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
       ACOutL1Watts = doc["value"].as<float>();
-      if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+      if (verboseDebugOutput)
         Serial.println("ACOutL1Watts " + String(ACOutL1Watts));
       lastMQTTUpdateReceived = millis();
     });
@@ -905,10 +1147,10 @@ void onConnectionEstablished() {
       if (awaitingDataToBeReceived[6])
         awaitingDataToBeReceived[6] = false;
       String response = String(payload);
-      DynamicJsonDocument doc(256);
+      JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
       ACOutL2Watts = doc["value"].as<float>();
-      if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+      if (verboseDebugOutput)
         Serial.println("ACOutL2Watts " + String(ACOutL2Watts));
       lastMQTTUpdateReceived = millis();
     });
@@ -927,33 +1169,33 @@ void onConnectionEstablished() {
     if (awaitingDataToBeReceived[7])
       awaitingDataToBeReceived[7] = false;
     String response = String(payload);
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     int workingMode = doc["value"].as<int>();
     switch (workingMode) {
       case 1:
         currentMultiplusMode = ChargerOnly;
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+        if (verboseDebugOutput)
           Serial.println("Multiplus is in charger only mode");
         break;
       case 2:
         currentMultiplusMode = InverterOnly;
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+        if (verboseDebugOutput)
           Serial.println("Multiplus is in inverter only mode");
         break;
       case 3:
         currentMultiplusMode = On;
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+        if (verboseDebugOutput)
           Serial.println("Multiplus is in on");
         break;
       case 4:
         currentMultiplusMode = Off;
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+        if (verboseDebugOutput)
           Serial.println("Multiplus is off");
         break;
       default:
         currentMultiplusMode = Unknown;
-        if (GENERAL_SETTINGS_DEBUG_OUTPUT)
+        if (verboseDebugOutput)
           Serial.println("Unknown multiplus mode: " + String(workingMode));
         break;
     };
@@ -965,24 +1207,245 @@ void onConnectionEstablished() {
   KeepMQTTAlive(true);
 }
 
-void SetupWiFi() {
-  if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-    Serial.println("Setting up Wi-Fi");
+void MassUnsubscribe() {
 
-  // Enable debugging messages sent to serial output
-  client.enableDebuggingMessages();
+  if (generalDebugOutput)
+    Serial.println("Unsubscribing");
 
-  // Enable Over The Air (OTA) updates
-  client.enableOTA(SECRET_SETTINGS_OTA_PASSWORD, SECRET_SETTINGS_OTA_Port);
+  String commonTopicStartString = "N/" + VictronInstallationID + "/system/0/";
+  String multiplusModeTopicString = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+
+  client.unsubscribe(commonTopicStartString + "Ac/Grid/L1/Power");
+  client.unsubscribe(commonTopicStartString + "Dc/Pv/Power");
+  client.unsubscribe(commonTopicStartString + "Dc/Battery/Soc");
+  client.unsubscribe(commonTopicStartString + "Dc/Battery/TimeToGo");
+  client.unsubscribe(commonTopicStartString + "Dc/Battery/Power");
+  client.unsubscribe(commonTopicStartString + "Ac/Consumption/L1/Power");
+  client.unsubscribe(commonTopicStartString + "Ac/Consumption/L2/Power");
+  client.unsubscribe(multiplusModeTopicString);
+
+  msTimer.begin(100);
 }
 
+void onConnectionEstablished() {
+
+  if (VictronInstallationID == "+") {
+
+    // Let's find the Victron Installation ID
+
+    client.subscribe("N/+/system/0/Serial", [](const String &topic, const String &payload) {
+      client.unsubscribe("N/+/system/0/Serial");
+      String mytopic = String(topic);
+      VictronInstallationID = mytopic.substring(2, 14);
+      if (generalDebugOutput)
+        Serial.println("*** Discovered Installation ID: " + VictronInstallationID);
+
+      onConnectionEstablished();
+      return;
+    });
+
+    return;
+  };
+
+  if (MultiplusThreeDigitID == "+") {
+
+    // Let's find the Multiplus three digit ID
+
+    client.subscribe("N/" + VictronInstallationID + "/vebus/+/Mode", [](const String &topic, const String &payload) {
+      client.unsubscribe("N/" + VictronInstallationID + "/vebus/+/Mode");
+      String mytopic = String(topic);
+      MultiplusThreeDigitID = mytopic.substring(21, 24);
+      if (generalDebugOutput)
+        Serial.println("*** Discovered Multiplus three digit ID: " + MultiplusThreeDigitID);
+
+      onConnectionEstablished();
+      return;
+    });
+
+    // a keep alive request is required for Venus to publish the topic subscribed to above
+    KeepMQTTAlive(true);
+
+    return;
+  };
+
+  // at this point we have the VictronInstallationID and the MultiplusThreeDigitID so let's get the rest of the data
+
+  MassSubscribe();
+}
+
+void onWiFiConnectionEstablished(WiFiEvent_t event, WiFiEventInfo_t info) {
+
+  if (generalDebugOutput) {
+
+    Serial.print("Wi-Fi connected to: ");
+    Serial.println(String(SECRET_SETTINGS_WIFI_SSID));
+
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  };
+
+  RefreshTimeOnceADay(true);
+}
+
+void SetupWiFiAndMQTT() {
+
+  if (generalDebugOutput)
+    Serial.println("Setting up Wi-Fi and MQTT");
+
+  // if GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY is true
+  // then enable the on-connection event in order that the time from an NTP server once the Wifi connection has been established
+  // otherwise this is not needed
+  if (GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY)
+    WiFi.onEvent(onWiFiConnectionEstablished, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
+
+  if (GENERAL_SETTINGS_ENABLE_OVER_THE_AIR_UPDATES)
+    client.enableOTA(SECRET_SETTINGS_OTA_PASSWORD, SECRET_SETTINGS_OTA_Port);
+
+  if (verboseDebugOutput)
+    client.enableDebuggingMessages();
+}
+
+bool isNumeric(String str) {
+
+  for (size_t i = 0; i < str.length(); i++) {
+    if (!isdigit(str.charAt(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void SetTheDisplayOn(bool theDisplayShouldBeOn) {
+
+  if (theDisplayIsCurrentlyOn && !theDisplayShouldBeOn) {
+
+    // turn the display off
+
+    // an AMOLED screen has no backlight as each pixel is an individual LED, so filling the display with black effectively turns it off causing it to use the least current possible
+    sprite.fillSprite(TFT_BLACK);
+    RefreshDisplay();
+
+    // if the display is off there is no use receiving MQTT information, therefore unsubscribe to it so network traffic may be reduced
+    MassUnsubscribe();
+
+    theDisplayIsCurrentlyOn = false;
+
+    if (generalDebugOutput)
+      Serial.println("Display turned off");
+
+  } else {
+
+    if (!theDisplayIsCurrentlyOn && theDisplayShouldBeOn) {
+
+      // turn the display on
+      // effectively just re-enable updates to it
+
+      // subscribe so that the data will be updated now that the display is back on
+      MassSubscribe();
+
+      theDisplayIsCurrentlyOn = true;
+
+      if (generalDebugOutput)
+        Serial.println("Display turned on");
+    };
+  };
+}
+
+void SetDisplayOrientation() {
+
+  if (GENERAL_SETTINGS_USB_ON_THE_LEFT)
+    lcd_setRotation(3);
+  else
+    lcd_setRotation(1);
+};
+
+
+bool parseTimeString(String timeString, int &hours, int &minutes) {
+
+  if (timeString.length() != 5) {  // Check if the length is not equal to "HH:MM"
+    return false;
+  }
+
+  if (timeString.charAt(2) != ':') {  // Check if the separator is at the correct position
+    return false;
+  }
+
+  String hourStr = timeString.substring(0, 2);  // Extract hours substring
+  String minuteStr = timeString.substring(3);   // Extract minutes substring
+
+  if (!isNumeric(hourStr) || !isNumeric(minuteStr)) {  // Check if both substrings are numeric
+    return false;
+  }
+
+  hours = hourStr.toInt();      // Convert hour string to integer
+  minutes = minuteStr.toInt();  // Convert minute string to integer
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {  // Check if hours and minutes are within valid range
+    return false;
+  }
+
+  return true;  // Time string successfully parsed
+}
+
+void SetDisplayOnAndOffTimes() {
+
+  if (turnOnDisplayAtSpecificTimesOnly) {
+
+    String sleepTime = String(GENERAL_SETTINGS_SLEEP_TIME);
+    String wakeTime = String(GENERAL_SETTINGS_WAKE_TIME);
+
+    if (parseTimeString(sleepTime, sleepHour, sleepMinute)) {
+
+      if (parseTimeString(wakeTime, wakeHour, wakeMinute)) {
+
+        int timeToWake = wakeHour * 60 + wakeMinute;
+        int timeToSleep = sleepHour * 60 + sleepMinute;
+        theDisplayIsCurrentlyOn = (timeToWake < timeToSleep);
+
+        if (verboseDebugOutput) {
+          if (timeToWake < timeToSleep) {
+            Serial.print("Wake time set to:  ");
+            Serial.println(wakeTime);
+            Serial.print("Sleep time set to: ");
+            Serial.println(sleepTime);
+          } else {
+            Serial.print("Sleep time set to: ");
+            Serial.println(sleepTime);
+            Serial.print("Wake time set to:  ");
+            Serial.println(wakeTime);
+          };
+        };
+
+      } else {
+        turnOnDisplayAtSpecificTimesOnly = false;
+        if (generalDebugOutput)
+          Serial.println("Problem with GENERAL_SETTINGS_WAKE_TIME setting value, should be HH:MM");
+      }
+    } else {
+      turnOnDisplayAtSpecificTimesOnly = false;
+      if (generalDebugOutput)
+        Serial.println("Problem with GENERAL_SETTINGS_SLEEP_TIME setting value, should be HH:MM");
+    };
+  } else {
+    if (generalDebugOutput)
+      Serial.println("Display set as always on");
+  };
+};
+
 void SetupDisplay() {
+
   sprite.createSprite(TFT_WIDTH, TFT_HEIGHT);
   sprite.setSwapBytes(1);
 
   rm67162_init();
 
-  SetupDisplayOrientation();
+  SetDisplayOrientation();
+
+  SetDisplayOnAndOffTimes();
+
+  KeepTheDisplayOnForThisManyMinutes(1);
+
+  SetTheDisplayOn(true);
 }
 
 void ShowOpeningWindow() {
@@ -999,35 +1462,44 @@ void ShowOpeningWindow() {
     sprite.loadFont(NotoSansBold15);
     sprite.drawString(programURL, TFT_WIDTH / 2, TFT_HEIGHT / 2 + 45);
 
-    RefreshScreen();
+    RefreshDisplay();
     sprite.unloadFont();
 
     delay(5000);
   };
 }
 
+void SetDebugLevel() {
+
+  generalDebugOutput = (GENERAL_SETTINGS_DEBUG_OUTPUT_LEVEL > 0);
+  verboseDebugOutput = (GENERAL_SETTINGS_DEBUG_OUTPUT_LEVEL > 1);
+
+  if (generalDebugOutput) {
+    Serial.begin(GENERAL_SETTINGS_SERIAL_MONITOR_SPEED);
+  };
+};
+
+
 void setup() {
 
-  if (GENERAL_SETTINGS_DEBUG_OUTPUT) {
-    Serial.begin(GENERAL_SETTINGS_SERIAL_MONITOR_SPEED);
+  SetDebugLevel();
+
+  if (generalDebugOutput) {
     Serial.println(programName + " " + programVersion);
     Serial.println(programURL);
   };
 
-  TurnOffGreenLED();
+  SetGreenLEDOn(false);
 
   SetupTopAndBottomButtons();
 
-  ResetGlobals();
-
   SetupDisplay();
 
+  ResetGlobals();
+
+  SetupWiFiAndMQTT();
+
   ShowOpeningWindow();
-
-  SetupWiFi();
-
-  if (GENERAL_SETTINGS_DEBUG_OUTPUT)
-    Serial.println("setup complete");
 }
 
 void loop() {
@@ -1038,7 +1510,9 @@ void loop() {
 
   CheckButtons();
 
-  UpdateScreen();
+  UpdateDisplay();
+
+  RefreshTimeOnceADay();
 
   ArduinoOTA.handle();
 }
