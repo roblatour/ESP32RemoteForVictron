@@ -4,7 +4,7 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
-// version 1.2 - added data gathering for Grid 2 and Grid 3 inputs
+// version 1.2 - added data gathering for Grid 2 and Grid 3 inputs and AC Load 3
 // version 1.1 - integrated a timer for automatically turning the display on/off at specified times
 // version 1   - initial release
 //
@@ -52,7 +52,7 @@ const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 String VictronInstallationID = "+";
 String MultiplusThreeDigitID = "+";
 
-const int dataPoints = 10;
+const int dataPoints = 11;
 bool awaitingDataToBeReceived[dataPoints];
 bool awaitingInitialTrasmissionOfAllDataPoints;
 
@@ -68,6 +68,7 @@ float batteryPower = 0.0;
 
 float ACOutL1Watts = 0.0;
 float ACOutL2Watts = 0.0;
+float ACOutL3Watts = 0.0;
 
 enum multiplusMode { ChargerOnly,
                      InverterOnly,
@@ -880,7 +881,7 @@ void UpdateDisplay() {
   sprite.loadFont(NotoSansBold36);
 
   y = TFT_HEIGHT - 30;
-  float TotalACConsumptionWatts = int(ACOutL1Watts + ACOutL2Watts);
+  float TotalACConsumptionWatts = int(ACOutL1Watts + ACOutL2Watts + ACOutL3Watts);
   if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && (TotalACConsumptionWatts >= 1000.0F)) {
     TotalACConsumptionWatts = TotalACConsumptionWatts / 1000.0F;
     sprite.drawString(ConvertToStringWithAFixedNumberOfDecimalPlaces(TotalACConsumptionWatts, GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING) + " KW", x, y);
@@ -998,6 +999,7 @@ void ResetGlobals() {
 
   ACOutL1Watts = 0.0;
   ACOutL2Watts = 0.0;
+  ACOutL3Watts = 0.0;
 
   currentMultiplusMode = Unknown;
 };
@@ -1166,7 +1168,7 @@ void MassSubscribe() {
 
   msTimer.begin(100);
 
-  // AC Out (L1, L2)
+  // AC Out (L1, L2, L3)
 
   if (GENERAL_SETTINGS_AC_OUT_L1_IS_USED) {
     client.subscribe(commonTopicStartString + "Ac/Consumption/L1/Power", [](const String &payload) {
@@ -1206,13 +1208,33 @@ void MassSubscribe() {
       awaitingDataToBeReceived[8] = false;
   };
 
+  if (GENERAL_SETTINGS_AC_OUT_L3_IS_USED) {
+    client.subscribe(commonTopicStartString + "Ac/Consumption/L3/Power", [](const String &payload) {
+      if (awaitingDataToBeReceived[9])
+        awaitingDataToBeReceived[9] = false;
+      String response = String(payload);
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, response);
+      ACOutL3Watts = doc["value"].as<float>();
+      if (verboseDebugOutput)
+        Serial.println("ACOutL3Watts " + String(ACOutL3Watts));
+      lastMQTTUpdateReceived = millis();
+    });
+
+    msTimer.begin(100);
+  } else {
+    if (awaitingDataToBeReceived[9])
+      awaitingDataToBeReceived[9] = false;
+  };
+
+
   // Multiplus mode
 
   currentMultiplusMode = Unknown;
 
   client.subscribe(multiplusModeTopicString, [](const String &payload) {
-    if (awaitingDataToBeReceived[9])
-      awaitingDataToBeReceived[9] = false;
+    if (awaitingDataToBeReceived[10])
+      awaitingDataToBeReceived[10] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);

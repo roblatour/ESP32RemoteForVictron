@@ -21,6 +21,7 @@
 #define GENERAL_SETTINGS_PV_IS_USED                                    true    // set to true if PV (Solar) is used in your installation, otherwise set to false
 #define GENERAL_SETTINGS_AC_OUT_L1_IS_USED                             true    // set to true if AC OUT L1 is used in your installation, otherwise set to false
 #define GENERAL_SETTINGS_AC_OUT_L2_IS_USED                             true    // set to true if AC OUT L2 is used in your installation, otherwise set to false
+#define GENERAL_SETTINGS_AC_OUT_L3_IS_USED                             true    // set to true if AC OUT L3 is used in your installation, otherwise set to false
 
 #define GENERAL_SETTINGS_SHOW_SPLASH_SCREEN                            true    // set to true show the splash screen, set to false to not show the splash screen
 
