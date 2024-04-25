@@ -1,6 +1,8 @@
 #define GENERAL_SETTINGS_USB_ON_THE_LEFT                              true     // set to true to plug in the USB power cable from the left, set to false to plug in the USB power cable from the right
 
 #define GENERAL_SETTINGS_ALLOW_CHANGING_INVERTER_AND_CHARGER_MODES    true     // set to true to allow the user to change the Multiplus charger and inverter modes with the buttons on this device, otherwise to prevent that set to false
+#define GENERAL_SETTINGS_SHOW_CHARGER_MODE                            true     // set to true to show the charger mode, otherwise set to false to hide the charger mode
+#define GENERAL_SETTINGS_SHOW_INVERTER_MODE                           true     // set to true to show the inverter mode, otherwise set to false to hide the inverter mode
                                       
 #define GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES                 1     // seconds between display updates
 

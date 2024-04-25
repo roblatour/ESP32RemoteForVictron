@@ -4,7 +4,8 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
-// version 1.2 - added data gathering for Grid 2 and Grid 3 inputs and AC Load 3
+// version 1.3 - added options to show/hide charger and/or inverter status
+// version 1.2 - added data gathering and reporting for Grid 2 input, Grid 3 input, and AC Load 3
 // version 1.1 - integrated a timer for automatically turning the display on/off at specified times
 // version 1   - initial release
 //
@@ -806,11 +807,15 @@ void UpdateDisplay() {
   else
     x = TFT_WIDTH;
 
-  y = 5;
-  sprite.drawString("Charger " + chargerStatus, x, y);
+  if (GENERAL_SETTINGS_SHOW_CHARGER_MODE) {
+    y = 5;
+    sprite.drawString("Charger " + chargerStatus, x, y);
+  };
 
-  y = TFT_HEIGHT - 30;
-  sprite.drawString("Inverter " + inverterSatus, x, y);
+  if (GENERAL_SETTINGS_SHOW_INVERTER_MODE) {
+    y = TFT_HEIGHT - 30;
+    sprite.drawString("Inverter " + inverterSatus, x, y);
+  };
 
   sprite.unloadFont();
 
