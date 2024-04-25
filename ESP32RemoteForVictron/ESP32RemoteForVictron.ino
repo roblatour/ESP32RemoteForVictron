@@ -4,6 +4,7 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.2 - added data gathering for Grid 2 and Grid 3 inputs
 // version 1.1 - integrated a timer for automatically turning the display on/off at specified times
 // version 1   - initial release
 //
@@ -51,11 +52,13 @@ const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 String VictronInstallationID = "+";
 String MultiplusThreeDigitID = "+";
 
-const int dataPoints = 8;
+const int dataPoints = 10;
 bool awaitingDataToBeReceived[dataPoints];
 bool awaitingInitialTrasmissionOfAllDataPoints;
 
 float gridInL1Watts = 0.0;
+float gridInL2Watts = 0.0;
+float gridInL3Watts = 0.0;
 
 float solarWatts = 0.0;
 
@@ -852,7 +855,7 @@ void UpdateDisplay() {
 
   sprite.loadFont(NotoSansBold36);
 
-  float TotalGridWatts = int(gridInL1Watts);
+  float TotalGridWatts = int(gridInL1Watts) + int(gridInL2Watts) + int(gridInL3Watts);
 
   y = 43;
   if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && (TotalGridWatts >= 1000.0F)) {
@@ -984,6 +987,8 @@ void ResetGlobals() {
     awaitingDataToBeReceived[i] = true;
 
   gridInL1Watts = 0.0;
+  gridInL2Watts = 0.0;
+  gridInL3Watts = 0.0;
 
   solarWatts = 0.0;
 
@@ -1035,7 +1040,7 @@ void MassSubscribe() {
 
   // get the data
 
-  // Grid (L1)
+  // Grid (L1, L2, L3)
 
   if (GENERAL_SETTINGS_GRID_IN_L1_IS_USED) {
 
@@ -1057,11 +1062,51 @@ void MassSubscribe() {
       awaitingDataToBeReceived[0] = false;
   };
 
+  if (GENERAL_SETTINGS_GRID_IN_L2_IS_USED) {
+
+    client.subscribe(commonTopicStartString + "Ac/Grid/L2/Power", [](const String &payload) {
+      if (awaitingDataToBeReceived[1])
+        awaitingDataToBeReceived[1] = false;
+      String response = String(payload);
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, response);
+      gridInL2Watts = doc["value"].as<float>();
+      if (verboseDebugOutput)
+        Serial.println("gridInL2Watts " + String(gridInL2Watts));
+      lastMQTTUpdateReceived = millis();
+    });
+
+    msTimer.begin(100);
+  } else {
+    if (awaitingDataToBeReceived[1])
+      awaitingDataToBeReceived[1] = false;
+  };
+
+  if (GENERAL_SETTINGS_GRID_IN_L3_IS_USED) {
+
+    client.subscribe(commonTopicStartString + "Ac/Grid/L3/Power", [](const String &payload) {
+      if (awaitingDataToBeReceived[2])
+        awaitingDataToBeReceived[2] = false;
+      String response = String(payload);
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, response);
+      gridInL3Watts = doc["value"].as<float>();
+      if (verboseDebugOutput)
+        Serial.println("gridInL3Watts " + String(gridInL3Watts));
+      lastMQTTUpdateReceived = millis();
+    });
+
+    msTimer.begin(100);
+  } else {
+    if (awaitingDataToBeReceived[2])
+      awaitingDataToBeReceived[2] = false;
+  };
+
   // Solar
   if (GENERAL_SETTINGS_PV_IS_USED) {
     client.subscribe(commonTopicStartString + "Dc/Pv/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[1])
-        awaitingDataToBeReceived[1] = false;
+      if (awaitingDataToBeReceived[3])
+        awaitingDataToBeReceived[3] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1073,15 +1118,15 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[1])
-      awaitingDataToBeReceived[1] = false;
+    if (awaitingDataToBeReceived[3])
+      awaitingDataToBeReceived[3] = false;
   };
 
   // Battery
 
   client.subscribe(commonTopicStartString + "Dc/Battery/Soc", [](const String &payload) {
-    if (awaitingDataToBeReceived[2])
-      awaitingDataToBeReceived[2] = false;
+    if (awaitingDataToBeReceived[4])
+      awaitingDataToBeReceived[4] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -1094,8 +1139,8 @@ void MassSubscribe() {
   msTimer.begin(100);
 
   client.subscribe(commonTopicStartString + "Dc/Battery/TimeToGo", [](const String &payload) {
-    if (awaitingDataToBeReceived[3])
-      awaitingDataToBeReceived[3] = false;
+    if (awaitingDataToBeReceived[5])
+      awaitingDataToBeReceived[5] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -1108,8 +1153,8 @@ void MassSubscribe() {
   msTimer.begin(100);
 
   client.subscribe(commonTopicStartString + "Dc/Battery/Power", [](const String &payload) {
-    if (awaitingDataToBeReceived[4])
-      awaitingDataToBeReceived[4] = false;
+    if (awaitingDataToBeReceived[6])
+      awaitingDataToBeReceived[6] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -1125,8 +1170,8 @@ void MassSubscribe() {
 
   if (GENERAL_SETTINGS_AC_OUT_L1_IS_USED) {
     client.subscribe(commonTopicStartString + "Ac/Consumption/L1/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[5])
-        awaitingDataToBeReceived[5] = false;
+      if (awaitingDataToBeReceived[7])
+        awaitingDataToBeReceived[7] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1138,14 +1183,14 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[5])
-      awaitingDataToBeReceived[5] = false;
+    if (awaitingDataToBeReceived[7])
+      awaitingDataToBeReceived[7] = false;
   };
 
   if (GENERAL_SETTINGS_AC_OUT_L2_IS_USED) {
     client.subscribe(commonTopicStartString + "Ac/Consumption/L2/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[6])
-        awaitingDataToBeReceived[6] = false;
+      if (awaitingDataToBeReceived[8])
+        awaitingDataToBeReceived[8] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1157,8 +1202,8 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[6])
-      awaitingDataToBeReceived[6] = false;
+    if (awaitingDataToBeReceived[8])
+      awaitingDataToBeReceived[8] = false;
   };
 
   // Multiplus mode
@@ -1166,8 +1211,8 @@ void MassSubscribe() {
   currentMultiplusMode = Unknown;
 
   client.subscribe(multiplusModeTopicString, [](const String &payload) {
-    if (awaitingDataToBeReceived[7])
-      awaitingDataToBeReceived[7] = false;
+    if (awaitingDataToBeReceived[9])
+      awaitingDataToBeReceived[9] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
