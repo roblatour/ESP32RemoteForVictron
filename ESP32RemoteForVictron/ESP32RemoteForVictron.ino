@@ -47,7 +47,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.1)";
+const String programVersion = "(Version 1.3)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 String VictronInstallationID = "+";
