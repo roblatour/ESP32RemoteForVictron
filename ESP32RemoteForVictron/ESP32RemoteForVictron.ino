@@ -4,6 +4,7 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.4 - added deep sleep option to save power when the screen doesn't need to be on, added option to allow another system to send the periodic keep alive requests
 // version 1.3 - added options to show/hide charger and/or inverter status
 // version 1.2 - added data gathering and reporting for Grid 2 input, Grid 3 input, and AC Load 3
 // version 1.1 - integrated a timer for automatically turning the display on/off at specified times
@@ -47,11 +48,17 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.3)";
+const String programVersion = "(Version 1.4)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
-String VictronInstallationID = "+";
-String MultiplusThreeDigitID = "+";
+RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
+
+RTC_DATA_ATTR bool initialStartupLoadVictronInstallationandMultiplusIDs = true;
+RTC_DATA_ATTR char VictronInstallationIDArray[13];
+RTC_DATA_ATTR char MultiplusThreeDigitIDArray[4];
+
+String VictronInstallationID;
+String MultiplusThreeDigitID;
 
 const int dataPoints = 11;
 bool awaitingDataToBeReceived[dataPoints];
@@ -97,7 +104,6 @@ TFT_eSprite sprite = TFT_eSprite(&tft);
 
 // MQTT
 #include <EspMQTTClient.h>  // https://github.com/plapointe6/EspMQTTClient (v1.13.3)
-
 #include <string.h>
 
 EspMQTTClient client(
@@ -133,6 +139,10 @@ const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
 bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
 unsigned long nextTimeCheck = 0;
 unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0;
+
+// report a timeout after this many seconds of no data being received
+const int timeOutInSeconds = 61;
+const int timeOutInMilliSeconds = timeOutInSeconds * 1000;
 
 bool theDisplayIsCurrentlyOn;
 int sleepHour, sleepMinute, wakeHour, wakeMinute;
@@ -530,9 +540,6 @@ bool SetTime() {
 
   bool returnValue;
 
-  if (generalDebugOutput)
-    Serial.println("Setting time ... ");
-
   // configure NTP Server
   configTime(0, 0, primaryNTPServer, secondaryNTPServer, tertiaryNTPSever);
 
@@ -687,6 +694,8 @@ bool ShouldTheDisplayBeOn() {
 void UpdateDisplay() {
 
   static unsigned long nextDisplayUpdate = 0;
+  static bool tryToRestoreConnection = true;
+  static bool MQTTTransmissionLost = false;
 
   // turn on or off the display as needed
   bool theDisplayShouldBeOn = ShouldTheDisplayBeOn();
@@ -731,7 +740,10 @@ void UpdateDisplay() {
     return;
   };
 
-  if (millis() > (lastMQTTUpdateReceived + 3 * GENERAL_SETTINGS_SECONDS_BETWEEN_KEEP_ALIVE_REQUESTS * 1000)) {
+  // deal with the case that no data has arrived beyond the timeout period
+  // see the notes in the general_settings.h file for more information
+
+  if (millis() > (lastMQTTUpdateReceived + timeOutInMilliSeconds)) {
 
     sprite.fillSprite(TFT_BLACK);
     sprite.loadFont(NotoSansBold24);
@@ -739,9 +751,45 @@ void UpdateDisplay() {
     sprite.setTextColor(TFT_RED, TFT_BLACK);
     sprite.drawString("MQTT data updates have stopped", TFT_WIDTH / 2, TFT_HEIGHT / 2);
     RefreshDisplay();
+
     sprite.unloadFont();
+
+    if (!GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS) {
+      // another system is responsible for sending the keep alive requests
+      // keep the message "MQTT data updates have stopped" on the screen for a brief period
+      // note: although the code below only delays for 1 second, the message will stay on the screen
+      // for longer than that while attempts (below) are made to reconnect
+      delay(1000);
+    };
+
+    if (tryToRestoreConnection) {
+
+      // only try to restore the connection once
+      tryToRestoreConnection = false;
+
+      if (generalDebugOutput)
+        Serial.println("MQTT data updates have stopped");
+
+      ResetGlobals();
+
+      if (!GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS) {
+
+        // if GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS is false it means that this program was counting on another system to send
+        // the keep alive request.  However, as this does not seem to be happening at the moment, the program will try resubscribing and sending 
+        // a keep alive request itself (which is part of the mass subscribe process) to temporarily get things going again
+
+        MQTTTransmissionLost = true;
+
+        if (generalDebugOutput)
+          Serial.println("Attempting to restore MQTT data updates");
+
+        MassSubscribe();
+      };
+    };
     return;
   };
+
+  tryToRestoreConnection = true;
 
   // wait until data for all datapoints has been received prior to showing the display
   // while waiting display an appropriate message
@@ -766,6 +814,12 @@ void UpdateDisplay() {
       };
     // if we have reached this point data for all datapoints has been received
     awaitingInitialTrasmissionOfAllDataPoints = false;
+
+    if (MQTTTransmissionLost) {
+      MQTTTransmissionLost = false;
+      if (generalDebugOutput)
+        Serial.println("MQTT data updates restored");
+    };
   };
 
   nextDisplayUpdate = millis() + GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000;
@@ -982,11 +1036,16 @@ void UpdateDisplay() {
 
 void ResetGlobals() {
 
-  if (VictronInstallationID.length() == 1)
-    VictronInstallationID = SECRET_SETTING_VICTRON_INSTALLATION_ID;
+  if (initialStartupLoadVictronInstallationandMultiplusIDs) {
 
-  if (MultiplusThreeDigitID.length() == 1)
-    MultiplusThreeDigitID = SECRET_SETTING_VICTRON_MULTIPLUS_ID;
+    initialStartupLoadVictronInstallationandMultiplusIDs = false;
+
+    String(SECRET_SETTING_VICTRON_INSTALLATION_ID).toCharArray(VictronInstallationIDArray, String(SECRET_SETTING_VICTRON_INSTALLATION_ID).length() + 1);
+    String(SECRET_SETTING_VICTRON_MULTIPLUS_ID).toCharArray(MultiplusThreeDigitIDArray, String(SECRET_SETTING_VICTRON_MULTIPLUS_ID).length() + 1);
+  };
+
+  VictronInstallationID = String(VictronInstallationIDArray);
+  MultiplusThreeDigitID = String(MultiplusThreeDigitIDArray);
 
   awaitingInitialTrasmissionOfAllDataPoints = true;
   for (int i = 0; i < dataPoints; i++)
@@ -1013,22 +1072,21 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
   static unsigned long nextUpdate = 0;
 
-  // send keep alive request as needed
-  if ((millis() > nextUpdate) || (forceKeepAliveRequestNow)) {
+  if ((forceKeepAliveRequestNow) || (GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS)) {
 
-    nextUpdate = millis() + GENERAL_SETTINGS_SECONDS_BETWEEN_KEEP_ALIVE_REQUESTS * 1000;
+    if ((forceKeepAliveRequestNow) || (millis() > nextUpdate)) {
 
-    client.publish("R/" + VictronInstallationID + "/keepalive", "");
+      const int secondsBetweenKeepAliveRequests = 30;
 
-    if (verboseDebugOutput)
-      Serial.println("Keep alive request sent");
+      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000;
 
-    msTimer.begin(100);
-  };
+      client.publish("R/" + VictronInstallationID + "/keepalive", "");
 
-  // time out check
-  if (millis() > (nextUpdate + (GENERAL_SETTINGS_SECONDS_BETWEEN_KEEP_ALIVE_REQUESTS * 1000) * 3)) {
-    ResetGlobals();
+      if (verboseDebugOutput)
+        Serial.println("Keep alive request sent");
+
+      msTimer.begin(100);
+    };
   };
 }
 
@@ -1309,6 +1367,7 @@ void onConnectionEstablished() {
       client.unsubscribe("N/+/system/0/Serial");
       String mytopic = String(topic);
       VictronInstallationID = mytopic.substring(2, 14);
+      VictronInstallationID.toCharArray(VictronInstallationIDArray, VictronInstallationID.length() + 1);
       if (generalDebugOutput)
         Serial.println("*** Discovered Installation ID: " + VictronInstallationID);
 
@@ -1327,6 +1386,7 @@ void onConnectionEstablished() {
       client.unsubscribe("N/" + VictronInstallationID + "/vebus/+/Mode");
       String mytopic = String(topic);
       MultiplusThreeDigitID = mytopic.substring(21, 24);
+      MultiplusThreeDigitID.toCharArray(MultiplusThreeDigitIDArray, MultiplusThreeDigitID.length() + 1);
       if (generalDebugOutput)
         Serial.println("*** Discovered Multiplus three digit ID: " + MultiplusThreeDigitID);
 
@@ -1387,23 +1447,183 @@ bool isNumeric(String str) {
   return true;
 }
 
+
+void convertSecondsToTime(int seconds, int &hours, int &minutes, int &remainingSeconds) {
+  hours = seconds / 3600;  // 3600 seconds in an hour
+  seconds %= 3600;
+  minutes = seconds / 60;  // 60 seconds in a minute
+  remainingSeconds = seconds % 60;
+}
+
+void GotoDeepSleep() {
+
+  // this routine is only called when it is time to send the ESP32 to sleep
+  // accourding the logic below counts on the fact that the current time is currently within the sleep period
+
+  int toleranceSeconds = 15;  // don't bother going to sleep if a wakeup would otherwise happen in this many seconds
+
+  uint64_t secondsInDeepSleep = 0;
+
+  String sleepTime = String(GENERAL_SETTINGS_SLEEP_TIME);
+
+  String wakeTime = String(GENERAL_SETTINGS_WAKE_TIME);
+
+  if (sleepTime == wakeTime) {
+
+    // if sleep time = wake time go into deep sleep,
+    // however do not set a timer to wake up, rather wake will be handled by a button press
+
+    MassUnsubscribe();
+
+    if (generalDebugOutput) {
+      if (GENERAL_SETTINGS_USB_ON_THE_LEFT)
+        Serial.print("Going to sleep; device may be awakened by pressing the top button");
+      else
+        Serial.print("Going to sleep; device may be awakened by pressing the bottom button");
+      delay(250);
+      Serial.flush();
+    };
+
+    // provide time for the mass subscribe to complete
+    msTimer.begin(1000);
+
+    esp_deep_sleep_start();
+
+  } else {
+
+    if (parseTimeString(sleepTime, sleepHour, sleepMinute)) {
+
+      if (parseTimeString(wakeTime, wakeHour, wakeMinute)) {
+
+        int wakeupTimeInSeconds = (wakeHour * 60 + wakeMinute) * 60;
+
+        int sleepTimeInSeconds = (sleepHour * 60 + sleepMinute) * 60;
+
+        int NowInSeconds;
+
+        struct tm timeinfo;
+        if (getLocalTime(&timeinfo)) {
+          NowInSeconds = (timeinfo.tm_hour * 60 + timeinfo.tm_min) * 60 + timeinfo.tm_sec;
+
+        } else {
+
+          int tryAgainInThisManyMinutes = 10;
+          KeepTheDisplayOnForThisManyMinutes(tryAgainInThisManyMinutes);
+          if (generalDebugOutput) {
+            Serial.println("Could not set wakeup timer - network may be down - try again in another ");
+            Serial.println(tryAgainInThisManyMinutes);
+            Serial.println(" minutes");
+          };
+          return;
+        };
+
+        int secondsToDeepSleep;
+
+        if (wakeupTimeInSeconds < sleepTimeInSeconds) {
+
+          if (NowInSeconds == wakeupTimeInSeconds) {
+            secondsInDeepSleep = 0;
+          } else {
+
+            // the current time must be either before wakeup time or after sleep time
+
+            if (NowInSeconds < wakeupTimeInSeconds) {
+              secondsInDeepSleep = wakeupTimeInSeconds - NowInSeconds;
+            } else {
+              int secondsInADay = 24 * 60 * 60;
+              secondsInDeepSleep = secondsInADay - NowInSeconds + wakeupTimeInSeconds;
+            };
+          };
+
+        } else {
+
+          // wakeupTimeInSeconds > sleepTimeInSeconds
+
+          if (NowInSeconds != wakeupTimeInSeconds) {
+
+            // the current time must be between the sleep time and the wakeup time
+            secondsInDeepSleep = wakeupTimeInSeconds - NowInSeconds;
+          };
+        };
+      };
+    };
+  };
+
+  if (secondsInDeepSleep > toleranceSeconds) {
+
+    MassUnsubscribe();
+
+    if (generalDebugOutput) {
+
+      int hours, minutes, remainingSeconds;
+      convertSecondsToTime(secondsInDeepSleep, hours, minutes, remainingSeconds);
+
+      Serial.print("Going to sleep for ");
+
+      Serial.print(hours);
+      if (hours == 1)
+        Serial.print(" hour ");
+      else
+        Serial.print(" hours ");
+
+      Serial.print(minutes);
+      if (minutes == 1)
+        Serial.print(" minute ");
+      else
+        Serial.print(" minutes ");
+
+      Serial.print(remainingSeconds);
+      if (remainingSeconds == 1)
+        Serial.println(" second");
+      else
+        Serial.println(" seconds");
+
+      delay(250);
+      Serial.flush();
+    };
+
+    // provide time for the mass subscribe to complete
+    msTimer.begin(1000);
+
+    const uint64_t convertSecondsToMicroSeconds = 1000000;
+    uint64_t DeepSleepMicroSeconds = secondsInDeepSleep * convertSecondsToMicroSeconds;
+    esp_sleep_enable_timer_wakeup(DeepSleepMicroSeconds);
+    esp_deep_sleep_start();
+
+  } else {
+
+    if (generalDebugOutput) {
+      Serial.print("No need to sleep, as it'll be time to wakeup in the next ");
+      Serial.print(toleranceSeconds);
+      Serial.println(" seconds anyway!");
+    };
+  };
+}
+
 void SetTheDisplayOn(bool theDisplayShouldBeOn) {
+
+  static bool firstTimeSetup = true;
 
   if (theDisplayIsCurrentlyOn && !theDisplayShouldBeOn) {
 
-    // turn the display off
+    if (GENERAL_SETTINGS_USE_DEEP_SLEEP) {
 
-    // an AMOLED screen has no backlight as each pixel is an individual LED, so filling the display with black effectively turns it off causing it to use the least current possible
-    sprite.fillSprite(TFT_BLACK);
-    RefreshDisplay();
+      GotoDeepSleep();
 
-    // if the display is off there is no use receiving MQTT information, therefore unsubscribe to it so network traffic may be reduced
-    MassUnsubscribe();
+    } else {
 
-    theDisplayIsCurrentlyOn = false;
+      // an AMOLED screen has no backlight as each pixel is an individual LED, so filling the display with black effectively turns it off causing it to use the least current possible
+      sprite.fillSprite(TFT_BLACK);
+      RefreshDisplay();
 
-    if (generalDebugOutput)
-      Serial.println("Display turned off");
+      // if the display is off there is no use receiving MQTT information, therefore unsubscribe to it so network traffic may be reduced
+      MassUnsubscribe();
+
+      theDisplayIsCurrentlyOn = false;
+
+      if (generalDebugOutput)
+        Serial.println("Display turned off");
+    };
 
   } else {
 
@@ -1412,8 +1632,12 @@ void SetTheDisplayOn(bool theDisplayShouldBeOn) {
       // turn the display on
       // effectively just re-enable updates to it
 
-      // subscribe so that the data will be updated now that the display is back on
-      MassSubscribe();
+      // if this is the first time the display is being turned on then
+      // subscribe so that the data will be updated now that the display has been turned back on
+      if (firstTimeSetup)
+        firstTimeSetup = false;
+      else
+        MassSubscribe();
 
       theDisplayIsCurrentlyOn = true;
 
@@ -1522,7 +1746,8 @@ void SetupDisplay() {
 
 void ShowOpeningWindow() {
 
-  if (GENERAL_SETTINGS_SHOW_SPLASH_SCREEN) {
+  if ((GENERAL_SETTINGS_SHOW_SPLASH_SCREEN) && (initialStartupShowSplashScreen)) {
+
     sprite.fillSprite(TFT_BLACK);
 
     sprite.loadFont(NotoSansBold36);
@@ -1538,6 +1763,8 @@ void ShowOpeningWindow() {
     sprite.unloadFont();
 
     delay(5000);
+
+    initialStartupShowSplashScreen = false;
   };
 }
 
@@ -1551,19 +1778,39 @@ void SetDebugLevel() {
   };
 };
 
+void SetWakeUpButton() {
+
+  if ((GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY) && (GENERAL_SETTINGS_USE_DEEP_SLEEP)) {
+
+    // set wakeup button; sadly while the button tied to GPIO 0 can be used for this, the button tied to GPIO 21 cannot
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);  // set wake-up on button controlled by GPIO 0
+
+    if (generalDebugOutput) {
+      if (GENERAL_SETTINGS_USB_ON_THE_LEFT)
+        Serial.println("Wakeup button is on the top");
+      else
+        Serial.println("Wakeup button is on the bottom");
+    };
+  };
+};
 
 void setup() {
 
   SetDebugLevel();
 
   if (generalDebugOutput) {
+
+    Serial.println("");
     Serial.println(programName + " " + programVersion);
     Serial.println(programURL);
+    Serial.println("");
   };
 
   SetGreenLEDOn(false);
 
   SetupTopAndBottomButtons();
+
+  SetWakeUpButton();
 
   SetupDisplay();
 
