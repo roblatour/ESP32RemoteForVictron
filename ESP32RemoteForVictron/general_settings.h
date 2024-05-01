@@ -10,9 +10,17 @@
 
 #define GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING           1    // if GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW is true, then show KiloWatts with this many decimal places
 
+#define GENERAL_SETTINGS_ROUND_NUMBERS                                 true    // if true numbers will be rounded, otherwise they will be truncated (i.e. 9.55 rounded = 9.6; 9.55 truncated = 9.5)
+
 #define GENERAL_SETTINGS_SHOW_BATTERY_AS_YELLOW                          40    // show battery as yellow if its percentage charged is at or below this number
 
 #define GENERAL_SETTINGS_SHOW_BATTERY_AS_RED                             20    // show battery as red if its percentage charged is at or below this number   
+
+#define GENERAL_SETTINGS_ADDITIONAL_INFO                                  2    // show additonal information under battery percent:
+                                                                               // 0 = do not show any additional info  
+                                                                               // 1 = show Time To Go (remaining battery time); note this value is only available when the battery is discharging
+                                                                               // 2 = show solar charger (mppt) state: Off/Fault/Bulk/Absorption/Float/Storage/Equalize/ESS
+                                                                               // 3 = show battery temperature
 
                                                                                // if any of the following are not used in your installation then you can set the assocated value(s) below to false to reduce unneeded MQTT traffic:
 #define GENERAL_SETTINGS_GRID_IN_L1_IS_USED                            true    // set to true if Grid IN L1 is used in your installation, otherwise set to false

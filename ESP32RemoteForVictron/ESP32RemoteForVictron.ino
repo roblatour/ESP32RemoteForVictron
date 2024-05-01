@@ -4,6 +4,7 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.5 - added an option to specify what is displayed under the battery percent charged; added an option to round numbers
 // version 1.4 - added deep sleep option to save power when the screen doesn't need to be on, added option to allow another system to send the periodic keep alive requests
 // version 1.3 - added options to show/hide charger and/or inverter status
 // version 1.2 - added data gathering and reporting for Grid 2 input, Grid 3 input, and AC Load 3
@@ -48,7 +49,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.4)";
+const String programVersion = "(Version 1.5)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -56,11 +57,13 @@ RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
 RTC_DATA_ATTR bool initialStartupLoadVictronInstallationandMultiplusIDs = true;
 RTC_DATA_ATTR char VictronInstallationIDArray[13];
 RTC_DATA_ATTR char MultiplusThreeDigitIDArray[4];
+RTC_DATA_ATTR char SolarChargerThreeDigitIDArray[4];
 
 String VictronInstallationID;
 String MultiplusThreeDigitID;
+String SolarChargerThreeDigitID;
 
-const int dataPoints = 11;
+const int dataPoints = 13;
 bool awaitingDataToBeReceived[dataPoints];
 bool awaitingInitialTrasmissionOfAllDataPoints;
 
@@ -73,6 +76,8 @@ float solarWatts = 0.0;
 float batterySOC = 0.0;
 float batteryTTG = 0.0;
 float batteryPower = 0.0;
+float batteryTemperature = 0.0;
+String solarChargerState = "Unknown";
 
 float ACOutL1Watts = 0.0;
 float ACOutL2Watts = 0.0;
@@ -509,10 +514,20 @@ String ConvertSecondstoDayHoursMinutes(int n) {
   //return (sDays + "D " + sHours + "H " + sMinutes + "M");
 }
 
+float roundFloat(float value, int decimals) {
+  float multiplier = pow(10, decimals);
+  return round(value * multiplier) / multiplier;
+}
+
 String ConvertToStringWithAFixedNumberOfDecimalPlaces(float f, int numberOfDecimalPlaces = 1) {
+
+  // if round = true then round to the specified number of decimal places, otherwise truncate to the specified number of decimal places
 
   char workingArray[20 + numberOfDecimalPlaces];
   char formattedArray[20 + numberOfDecimalPlaces];
+
+  if (GENERAL_SETTINGS_ROUND_NUMBERS) 
+    f = roundFloat(f, numberOfDecimalPlaces);
 
   dtostrf(f, 15 + numberOfDecimalPlaces, numberOfDecimalPlaces, formattedArray);
   sprintf(workingArray, "%s", formattedArray);
@@ -775,7 +790,7 @@ void UpdateDisplay() {
       if (!GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS) {
 
         // if GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS is false it means that this program was counting on another system to send
-        // the keep alive request.  However, as this does not seem to be happening at the moment, the program will try resubscribing and sending 
+        // the keep alive request.  However, as this does not seem to be happening at the moment, the program will try resubscribing and sending
         // a keep alive request itself (which is part of the mass subscribe process) to temporarily get things going again
 
         MQTTTransmissionLost = true;
@@ -984,7 +999,8 @@ void UpdateDisplay() {
   sprite.setTextColor(batteryColour, TFT_BLACK);
 
   // show battery percent without a decimal place
-  int ibatterySOC = int(batterySOC);
+  
+  int ibatterySOC = ConvertToStringWithAFixedNumberOfDecimalPlaces(batterySOC,0).toInt();
   sprite.drawString(String(ibatterySOC) + "%", midX, midY);
 
   sprite.unloadFont();
@@ -992,9 +1008,28 @@ void UpdateDisplay() {
   sprite.loadFont(NotoSansBold24);
   sprite.drawString("Battery", midX, midY - 60);
 
-  if (batteryTTG != 0) {
+  if ((GENERAL_SETTINGS_ADDITIONAL_INFO == 1) && (batteryTTG != 0)) {
+
+    // show time to go
     String TimeToGo = ConvertSecondstoDayHoursMinutes(int(batteryTTG));
     sprite.drawString(TimeToGo, midX, midY + 50);
+  } else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 2) {
+
+    // show charger state
+    sprite.drawString(solarChargerState, midX, midY + 50);
+  } else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 3) {
+
+    // show battery temperature (with one decimal place)
+
+    String temperatureString = ConvertToStringWithAFixedNumberOfDecimalPlaces(batteryTemperature, 1) + String("  ");
+
+    sprite.drawString(temperatureString, midX, midY + 50);
+
+    // add the degree symbol
+    sprite.unloadFont();
+    sprite.loadFont(NotoSansBold15);
+    int degreePosx = sprite.textWidth(temperatureString) / 2 + 4;
+    sprite.drawString(String("o"), midX + degreePosx, midY + 43);
   };
 
   sprite.unloadFont();
@@ -1042,10 +1077,12 @@ void ResetGlobals() {
 
     String(SECRET_SETTING_VICTRON_INSTALLATION_ID).toCharArray(VictronInstallationIDArray, String(SECRET_SETTING_VICTRON_INSTALLATION_ID).length() + 1);
     String(SECRET_SETTING_VICTRON_MULTIPLUS_ID).toCharArray(MultiplusThreeDigitIDArray, String(SECRET_SETTING_VICTRON_MULTIPLUS_ID).length() + 1);
+    String(SECRET_SETTING_VICTRON_SOLAR_CHARGER_ID).toCharArray(SolarChargerThreeDigitIDArray, String(SECRET_SETTING_VICTRON_SOLAR_CHARGER_ID).length() + 1);
   };
 
   VictronInstallationID = String(VictronInstallationIDArray);
   MultiplusThreeDigitID = String(MultiplusThreeDigitIDArray);
+  SolarChargerThreeDigitID = String(SolarChargerThreeDigitIDArray);
 
   awaitingInitialTrasmissionOfAllDataPoints = true;
   for (int i = 0; i < dataPoints; i++)
@@ -1092,13 +1129,14 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
 void MassSubscribe() {
 
-  // at this point we have the VictronInstallationID and the MultiplusThreeDigitID so let's get the rest of the data
+  // at this point we have the VictronInstallationID, MultiplusThreeDigitID and SolarChargerThreeDigitID so let's get the rest of the data
 
   if (generalDebugOutput)
     Serial.println("Subscribing");
 
-  String commonTopicStartString = "N/" + VictronInstallationID + "/system/0/";
-  String multiplusModeTopicString = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+  String commonTopicStart = "N/" + VictronInstallationID + "/system/0/";
+  String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+  String multiplusModeTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
 
   // reset global variables so we will not start displaying information until all the subscribed data has been received
   ResetGlobals();
@@ -1109,9 +1147,8 @@ void MassSubscribe() {
 
   if (GENERAL_SETTINGS_GRID_IN_L1_IS_USED) {
 
-    client.subscribe(commonTopicStartString + "Ac/Grid/L1/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[0])
-        awaitingDataToBeReceived[0] = false;
+    client.subscribe(commonTopicStart + "Ac/Grid/L1/Power", [](const String &payload) {
+      awaitingDataToBeReceived[0] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1123,15 +1160,13 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[0])
-      awaitingDataToBeReceived[0] = false;
+    awaitingDataToBeReceived[0] = false;
   };
 
   if (GENERAL_SETTINGS_GRID_IN_L2_IS_USED) {
 
-    client.subscribe(commonTopicStartString + "Ac/Grid/L2/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[1])
-        awaitingDataToBeReceived[1] = false;
+    client.subscribe(commonTopicStart + "Ac/Grid/L2/Power", [](const String &payload) {
+      awaitingDataToBeReceived[1] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1143,15 +1178,13 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[1])
-      awaitingDataToBeReceived[1] = false;
+    awaitingDataToBeReceived[1] = false;
   };
 
   if (GENERAL_SETTINGS_GRID_IN_L3_IS_USED) {
 
-    client.subscribe(commonTopicStartString + "Ac/Grid/L3/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[2])
-        awaitingDataToBeReceived[2] = false;
+    client.subscribe(commonTopicStart + "Ac/Grid/L3/Power", [](const String &payload) {
+      awaitingDataToBeReceived[2] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1163,15 +1196,13 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[2])
-      awaitingDataToBeReceived[2] = false;
+    awaitingDataToBeReceived[2] = false;
   };
 
   // Solar
   if (GENERAL_SETTINGS_PV_IS_USED) {
-    client.subscribe(commonTopicStartString + "Dc/Pv/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[3])
-        awaitingDataToBeReceived[3] = false;
+    client.subscribe(commonTopicStart + "Dc/Pv/Power", [](const String &payload) {
+      awaitingDataToBeReceived[3] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1183,15 +1214,13 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[3])
-      awaitingDataToBeReceived[3] = false;
+    awaitingDataToBeReceived[3] = false;
   };
 
   // Battery
 
-  client.subscribe(commonTopicStartString + "Dc/Battery/Soc", [](const String &payload) {
-    if (awaitingDataToBeReceived[4])
-      awaitingDataToBeReceived[4] = false;
+  client.subscribe(commonTopicStart + "Dc/Battery/Soc", [](const String &payload) {
+    awaitingDataToBeReceived[4] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -1203,23 +1232,8 @@ void MassSubscribe() {
 
   msTimer.begin(100);
 
-  client.subscribe(commonTopicStartString + "Dc/Battery/TimeToGo", [](const String &payload) {
-    if (awaitingDataToBeReceived[5])
-      awaitingDataToBeReceived[5] = false;
-    String response = String(payload);
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, response);
-    batteryTTG = doc["value"].as<float>();
-    if (verboseDebugOutput)
-      Serial.println("batteryTTG " + String(batteryTTG));
-    lastMQTTUpdateReceived = millis();
-  });
-
-  msTimer.begin(100);
-
-  client.subscribe(commonTopicStartString + "Dc/Battery/Power", [](const String &payload) {
-    if (awaitingDataToBeReceived[6])
-      awaitingDataToBeReceived[6] = false;
+  client.subscribe(commonTopicStart + "Dc/Battery/Power", [](const String &payload) {
+    awaitingDataToBeReceived[5] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -1231,12 +1245,111 @@ void MassSubscribe() {
 
   msTimer.begin(100);
 
+  switch (GENERAL_SETTINGS_ADDITIONAL_INFO) {
+
+    case 0:
+
+      awaitingDataToBeReceived[6] = false;
+      awaitingDataToBeReceived[7] = false;
+      awaitingDataToBeReceived[8] = false;
+      break;
+
+    case 1:
+
+      client.subscribe(commonTopicStart + "Dc/Battery/TimeToGo", [](const String &payload) {
+        awaitingDataToBeReceived[6] = false;
+        String response = String(payload);
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, response);
+        batteryTTG = doc["value"].as<float>();
+        if (verboseDebugOutput)
+          Serial.println("batteryTTG " + String(batteryTTG));
+        lastMQTTUpdateReceived = millis();
+      });
+
+      awaitingDataToBeReceived[7] = false;
+      awaitingDataToBeReceived[8] = false;
+      break;
+
+    case 2:
+
+      awaitingDataToBeReceived[6] = false;
+
+      client.subscribe(solarChargerStateTopic, [](const String &payload) {
+        awaitingDataToBeReceived[7] = false;
+        String response = String(payload);
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, response);
+        int stateCode = doc["value"].as<int>();
+
+        switch (stateCode) {
+          case 0:
+            solarChargerState = "Off";
+            break;
+          case 2:
+            solarChargerState = "Fault";
+            break;
+          case 3:
+            solarChargerState = "Bulk";
+            break;
+          case 4:
+            solarChargerState = "Absorption";
+            break;
+          case 5:
+            solarChargerState = "Float";
+            break;
+          case 6:
+            solarChargerState = "Storage";
+            break;
+          case 7:
+            solarChargerState = "Equalize";
+            break;
+          case 252:
+            solarChargerState = "ESS";
+            break;
+          default:
+            solarChargerState = "Unknown";
+            break;
+        };
+
+        if (verboseDebugOutput)
+          Serial.println("solarChargingState " + String(batteryTTG));
+        lastMQTTUpdateReceived = millis();
+      });
+
+      awaitingDataToBeReceived[8] = false;
+      break;
+
+    case 3:
+
+      awaitingDataToBeReceived[6] = false;
+      awaitingDataToBeReceived[7] = false;
+
+      client.subscribe(commonTopicStart + "Dc/Battery/Temperature", [](const String &payload) {
+        awaitingDataToBeReceived[8] = false;
+        String response = String(payload);
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, response);
+        batteryTemperature = doc["value"].as<float>();
+        if (verboseDebugOutput)
+          Serial.println("batteryTemperature " + String(batteryTemperature));
+        lastMQTTUpdateReceived = millis();
+      });
+
+      msTimer.begin(100);
+      break;
+
+    default:
+      break;
+  };
+
+  msTimer.begin(100);
+
   // AC Out (L1, L2, L3)
 
   if (GENERAL_SETTINGS_AC_OUT_L1_IS_USED) {
-    client.subscribe(commonTopicStartString + "Ac/Consumption/L1/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[7])
-        awaitingDataToBeReceived[7] = false;
+    client.subscribe(commonTopicStart + "Ac/Consumption/L1/Power", [](const String &payload) {
+      awaitingDataToBeReceived[9] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1248,14 +1361,12 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[7])
-      awaitingDataToBeReceived[7] = false;
+    awaitingDataToBeReceived[9] = false;
   };
 
   if (GENERAL_SETTINGS_AC_OUT_L2_IS_USED) {
-    client.subscribe(commonTopicStartString + "Ac/Consumption/L2/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[8])
-        awaitingDataToBeReceived[8] = false;
+    client.subscribe(commonTopicStart + "Ac/Consumption/L2/Power", [](const String &payload) {
+      awaitingDataToBeReceived[10] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1267,14 +1378,12 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[8])
-      awaitingDataToBeReceived[8] = false;
+    awaitingDataToBeReceived[10] = false;
   };
 
   if (GENERAL_SETTINGS_AC_OUT_L3_IS_USED) {
-    client.subscribe(commonTopicStartString + "Ac/Consumption/L3/Power", [](const String &payload) {
-      if (awaitingDataToBeReceived[9])
-        awaitingDataToBeReceived[9] = false;
+    client.subscribe(commonTopicStart + "Ac/Consumption/L3/Power", [](const String &payload) {
+      awaitingDataToBeReceived[11] = false;
       String response = String(payload);
       JsonDocument doc;
       DeserializationError error = deserializeJson(doc, response);
@@ -1286,8 +1395,7 @@ void MassSubscribe() {
 
     msTimer.begin(100);
   } else {
-    if (awaitingDataToBeReceived[9])
-      awaitingDataToBeReceived[9] = false;
+    awaitingDataToBeReceived[11] = false;
   };
 
 
@@ -1295,9 +1403,8 @@ void MassSubscribe() {
 
   currentMultiplusMode = Unknown;
 
-  client.subscribe(multiplusModeTopicString, [](const String &payload) {
-    if (awaitingDataToBeReceived[10])
-      awaitingDataToBeReceived[10] = false;
+  client.subscribe(multiplusModeTopic, [](const String &payload) {
+    awaitingDataToBeReceived[12] = false;
     String response = String(payload);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
@@ -1342,22 +1449,57 @@ void MassUnsubscribe() {
   if (generalDebugOutput)
     Serial.println("Unsubscribing");
 
-  String commonTopicStartString = "N/" + VictronInstallationID + "/system/0/";
-  String multiplusModeTopicString = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+  String commonTopicStart = "N/" + VictronInstallationID + "/system/0/";
+  String multiplusModeTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+  String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
 
-  client.unsubscribe(commonTopicStartString + "Ac/Grid/L1/Power");
-  client.unsubscribe(commonTopicStartString + "Dc/Pv/Power");
-  client.unsubscribe(commonTopicStartString + "Dc/Battery/Soc");
-  client.unsubscribe(commonTopicStartString + "Dc/Battery/TimeToGo");
-  client.unsubscribe(commonTopicStartString + "Dc/Battery/Power");
-  client.unsubscribe(commonTopicStartString + "Ac/Consumption/L1/Power");
-  client.unsubscribe(commonTopicStartString + "Ac/Consumption/L2/Power");
-  client.unsubscribe(multiplusModeTopicString);
+  if (GENERAL_SETTINGS_GRID_IN_L1_IS_USED)
+    client.unsubscribe(commonTopicStart + "Ac/Grid/L1/Power");
+
+  if (GENERAL_SETTINGS_GRID_IN_L2_IS_USED)
+    client.unsubscribe(commonTopicStart + "Ac/Grid/L2/Power");
+
+  if (GENERAL_SETTINGS_GRID_IN_L3_IS_USED)
+    client.unsubscribe(commonTopicStart + "Ac/Grid/L3/Power");
+
+  if (GENERAL_SETTINGS_PV_IS_USED)
+    client.unsubscribe(commonTopicStart + "Dc/Pv/Power");
+
+  client.unsubscribe(commonTopicStart + "Dc/Battery/Soc");
+
+  client.unsubscribe(commonTopicStart + "Dc/Battery/Power");
+
+  switch (GENERAL_SETTINGS_ADDITIONAL_INFO) {
+    case 2:
+      client.unsubscribe(commonTopicStart + "Dc/Battery/TimeToGo");
+      break;
+    case 3:
+      client.unsubscribe(solarChargerStateTopic);
+      break;
+    case 4:
+      client.unsubscribe(commonTopicStart + "Dc/Battery/Temperature");
+      break;
+    default:
+      break;
+  };
+
+  if (GENERAL_SETTINGS_AC_OUT_L1_IS_USED)
+    client.unsubscribe(commonTopicStart + "Ac/Consumption/L1/Power");
+
+  if (GENERAL_SETTINGS_AC_OUT_L2_IS_USED)
+    client.unsubscribe(commonTopicStart + "Ac/Consumption/L2/Power");
+
+  if (GENERAL_SETTINGS_AC_OUT_L3_IS_USED)
+    client.unsubscribe(commonTopicStart + "Ac/Consumption/L3/Power");
+
+  client.unsubscribe(multiplusModeTopic);
 
   msTimer.begin(100);
 }
 
 void onConnectionEstablished() {
+
+  // note: this subroutine uses recurrsion to discover the VictronInstallationID, MultiplusThreeDigitID and (if needed) SolarChargerThreeDigitID
 
   if (VictronInstallationID == "+") {
 
@@ -1400,7 +1542,29 @@ void onConnectionEstablished() {
     return;
   };
 
-  // at this point we have the VictronInstallationID and the MultiplusThreeDigitID so let's get the rest of the data
+  if ((SolarChargerThreeDigitID == "+") && (GENERAL_SETTINGS_ADDITIONAL_INFO == 2)) {
+
+    // Let's find the solarcharger three digit ID
+
+    client.subscribe("N/" + VictronInstallationID + "/solarcharger/+/Mode", [](const String &topic, const String &payload) {
+      client.unsubscribe("N/" + VictronInstallationID + "/solarcharger/+/Mode");
+      String mytopic = String(topic);
+      SolarChargerThreeDigitID = mytopic.substring(28, 31);
+      SolarChargerThreeDigitID.toCharArray(SolarChargerThreeDigitIDArray, SolarChargerThreeDigitID.length() + 1);
+      if (generalDebugOutput)
+        Serial.println("*** Discovered Solar Charger three digit ID: " + SolarChargerThreeDigitID);
+
+      onConnectionEstablished();
+      return;
+    });
+
+    // a keep alive request is required for Venus to publish the topic subscribed to above
+    KeepMQTTAlive(true);
+
+    return;
+  };
+
+  // at this point the recursive calling is over and we have the VictronInstallationID, MultiplusThreeDigitID and (if needed) SolarChargerThreeDigitID so let's get the rest of the data
 
   MassSubscribe();
 }
