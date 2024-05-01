@@ -1,4 +1,4 @@
-// ESP32 Victron Monitor (version 1)
+// ESP32 Victron Monitor (version 1.5)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
