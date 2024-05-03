@@ -19,7 +19,7 @@
 #define GENERAL_SETTINGS_ADDITIONAL_INFO                                  2    // show additonal information under battery percent:
                                                                                // 0 = do not show any additional info  
                                                                                // 1 = show Time To Go (remaining battery time); note this value is only available when the battery is discharging
-                                                                               // 2 = show solar charger (mppt) state: Off/Fault/Bulk/Absorption/Float/Storage/Equalize/ESS
+                                                                               // 2 = show Solar Charger (mppt) / Multiplus charging state: Off/Fault/Bulk/Absorption/Float/Storage/Equalize/ESS
                                                                                // 3 = show battery temperature
 
                                                                                // if any of the following are not used in your installation then you can set the assocated value(s) below to false to reduce unneeded MQTT traffic:

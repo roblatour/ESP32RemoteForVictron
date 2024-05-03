@@ -4,6 +4,8 @@
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+
+// version 1.6 - updated to take charging state from Multiplus if in ESS mode
 // version 1.5 - added an option to specify what is displayed under the battery percent charged; added an option to round numbers
 // version 1.4 - added deep sleep option to save power when the screen doesn't need to be on, added option to allow another system to send the periodic keep alive requests
 // version 1.3 - added options to show/hide charger and/or inverter status
@@ -49,7 +51,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.5)";
+const String programVersion = "(Version 1.6)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -58,6 +60,7 @@ RTC_DATA_ATTR bool initialStartupLoadVictronInstallationandMultiplusIDs = true;
 RTC_DATA_ATTR char VictronInstallationIDArray[13];
 RTC_DATA_ATTR char MultiplusThreeDigitIDArray[4];
 RTC_DATA_ATTR char SolarChargerThreeDigitIDArray[4];
+RTC_DATA_ATTR bool ESSIsBeingUsed = false;
 
 String VictronInstallationID;
 String MultiplusThreeDigitID;
@@ -77,7 +80,7 @@ float batterySOC = 0.0;
 float batteryTTG = 0.0;
 float batteryPower = 0.0;
 float batteryTemperature = 0.0;
-String solarChargerState = "Unknown";
+String chargingState = "Unknown";
 
 float ACOutL1Watts = 0.0;
 float ACOutL2Watts = 0.0;
@@ -526,7 +529,7 @@ String ConvertToStringWithAFixedNumberOfDecimalPlaces(float f, int numberOfDecim
   char workingArray[20 + numberOfDecimalPlaces];
   char formattedArray[20 + numberOfDecimalPlaces];
 
-  if (GENERAL_SETTINGS_ROUND_NUMBERS) 
+  if (GENERAL_SETTINGS_ROUND_NUMBERS)
     f = roundFloat(f, numberOfDecimalPlaces);
 
   dtostrf(f, 15 + numberOfDecimalPlaces, numberOfDecimalPlaces, formattedArray);
@@ -999,8 +1002,8 @@ void UpdateDisplay() {
   sprite.setTextColor(batteryColour, TFT_BLACK);
 
   // show battery percent without a decimal place
-  
-  int ibatterySOC = ConvertToStringWithAFixedNumberOfDecimalPlaces(batterySOC,0).toInt();
+
+  int ibatterySOC = ConvertToStringWithAFixedNumberOfDecimalPlaces(batterySOC, 0).toInt();
   sprite.drawString(String(ibatterySOC) + "%", midX, midY);
 
   sprite.unloadFont();
@@ -1016,7 +1019,7 @@ void UpdateDisplay() {
   } else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 2) {
 
     // show charger state
-    sprite.drawString(solarChargerState, midX, midY + 50);
+    sprite.drawString(chargingState, midX, midY + 50);
   } else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 3) {
 
     // show battery temperature (with one decimal place)
@@ -1103,6 +1106,8 @@ void ResetGlobals() {
   ACOutL3Watts = 0.0;
 
   currentMultiplusMode = Unknown;
+
+  chargingState = "";
 };
 
 void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
@@ -1127,6 +1132,115 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
   };
 }
 
+void SubscribeToGetChargingStateFromMultiplus() {
+
+  String commonLedsTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Leds";
+
+  client.subscribe(commonLedsTopic + "/Bulk", [](const String &payload) {
+    awaitingDataToBeReceived[7] = false;
+    String response = String(payload);
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    int LEDIndicator = doc["value"].as<int>();
+    if (LEDIndicator == 1)
+      chargingState = "Bulk";
+    if (verboseDebugOutput)
+      Serial.println("Multiplus Bulk LED is on");
+    lastMQTTUpdateReceived = millis();
+  });
+
+  msTimer.begin(100);
+
+  client.subscribe(commonLedsTopic + "/Absorption", [](const String &payload) {
+    awaitingDataToBeReceived[7] = false;
+    String response = String(payload);
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    int LEDIndicator = doc["value"].as<int>();
+    if (LEDIndicator == 1) 
+      chargingState = "Absorption";
+    if (verboseDebugOutput)
+      Serial.println("Multiplus Absorption LED is on");
+    lastMQTTUpdateReceived = millis();
+  });
+
+  msTimer.begin(100);
+
+  client.subscribe(commonLedsTopic + "/Float", [](const String &payload) {
+    awaitingDataToBeReceived[7] = false;
+    String response = String(payload);
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    int LEDIndicator = doc["value"].as<int>();
+    if (LEDIndicator == 1)
+      chargingState = "Float";
+    if (verboseDebugOutput)
+      Serial.println("Multiplus Float LED is on");
+    lastMQTTUpdateReceived = millis();
+  });
+
+  msTimer.begin(100);
+
+  KeepMQTTAlive(true);
+}
+
+void SubscribeToGetChargingStateFromSolarCharger() {
+
+  String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+
+  client.subscribe(solarChargerStateTopic, [](const String &payload) {
+    String response = String(payload);
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    int stateCode = doc["value"].as<int>();
+
+    switch (stateCode) {
+      case 0:
+        chargingState = "Off";
+        break;
+      case 2:
+        chargingState = "Fault";
+        break;
+      case 3:
+        chargingState = "Bulk";
+        break;
+      case 4:
+        chargingState = "Absorption";
+        break;
+      case 5:
+        chargingState = "Float";
+        break;
+      case 6:
+        chargingState = "Storage";
+        break;
+      case 7:
+        chargingState = "Equalize";
+        break;
+      case 252:
+        // ESS is being used, so we will get the Charging State from the Multiplus instead
+        // this will be done outside this switch statement to keep the compiler happy
+        ESSIsBeingUsed = true;
+        chargingState = "";
+        break;
+      default:
+        chargingState = "Unknown";
+        break;
+    };
+
+    if (ESSIsBeingUsed) {
+      String xsolarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+      client.unsubscribe(xsolarChargerStateTopic);
+      SubscribeToGetChargingStateFromMultiplus();
+    } else {
+      awaitingDataToBeReceived[7] = false;
+      if (verboseDebugOutput)
+        Serial.println("Charging State from MPPT: " + chargingState);
+    };
+
+    lastMQTTUpdateReceived = millis();
+  });
+}
+
 void MassSubscribe() {
 
   // at this point we have the VictronInstallationID, MultiplusThreeDigitID and SolarChargerThreeDigitID so let's get the rest of the data
@@ -1135,7 +1249,6 @@ void MassSubscribe() {
     Serial.println("Subscribing");
 
   String commonTopicStart = "N/" + VictronInstallationID + "/system/0/";
-  String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
   String multiplusModeTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
 
   // reset global variables so we will not start displaying information until all the subscribed data has been received
@@ -1154,7 +1267,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       gridInL1Watts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("gridInL1Watts " + String(gridInL1Watts));
+        Serial.println("gridInL1Watts: " + String(gridInL1Watts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1172,7 +1285,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       gridInL2Watts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("gridInL2Watts " + String(gridInL2Watts));
+        Serial.println("gridInL2Watts: " + String(gridInL2Watts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1190,7 +1303,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       gridInL3Watts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("gridInL3Watts " + String(gridInL3Watts));
+        Serial.println("gridInL3Watts: " + String(gridInL3Watts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1208,7 +1321,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       solarWatts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("solarWatts " + String(solarWatts));
+        Serial.println("solarWatts: " + String(solarWatts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1226,7 +1339,7 @@ void MassSubscribe() {
     DeserializationError error = deserializeJson(doc, response);
     batterySOC = doc["value"].as<float>();
     if (verboseDebugOutput)
-      Serial.println("batterySOC " + String(batterySOC));
+      Serial.println("batterySOC: " + String(batterySOC));
     lastMQTTUpdateReceived = millis();
   });
 
@@ -1239,7 +1352,7 @@ void MassSubscribe() {
     DeserializationError error = deserializeJson(doc, response);
     batteryPower = doc["value"].as<float>();
     if (verboseDebugOutput)
-      Serial.println("batteryPower " + String(batteryPower));
+      Serial.println("batteryPower: " + String(batteryPower));
     lastMQTTUpdateReceived = millis();
   });
 
@@ -1263,7 +1376,7 @@ void MassSubscribe() {
         DeserializationError error = deserializeJson(doc, response);
         batteryTTG = doc["value"].as<float>();
         if (verboseDebugOutput)
-          Serial.println("batteryTTG " + String(batteryTTG));
+          Serial.println("batteryTTG: " + String(batteryTTG));
         lastMQTTUpdateReceived = millis();
       });
 
@@ -1275,47 +1388,10 @@ void MassSubscribe() {
 
       awaitingDataToBeReceived[6] = false;
 
-      client.subscribe(solarChargerStateTopic, [](const String &payload) {
-        awaitingDataToBeReceived[7] = false;
-        String response = String(payload);
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, response);
-        int stateCode = doc["value"].as<int>();
-
-        switch (stateCode) {
-          case 0:
-            solarChargerState = "Off";
-            break;
-          case 2:
-            solarChargerState = "Fault";
-            break;
-          case 3:
-            solarChargerState = "Bulk";
-            break;
-          case 4:
-            solarChargerState = "Absorption";
-            break;
-          case 5:
-            solarChargerState = "Float";
-            break;
-          case 6:
-            solarChargerState = "Storage";
-            break;
-          case 7:
-            solarChargerState = "Equalize";
-            break;
-          case 252:
-            solarChargerState = "ESS";
-            break;
-          default:
-            solarChargerState = "Unknown";
-            break;
-        };
-
-        if (verboseDebugOutput)
-          Serial.println("solarChargingState " + String(batteryTTG));
-        lastMQTTUpdateReceived = millis();
-      });
+      if (ESSIsBeingUsed)
+        SubscribeToGetChargingStateFromMultiplus();
+      else
+        SubscribeToGetChargingStateFromSolarCharger();
 
       awaitingDataToBeReceived[8] = false;
       break;
@@ -1332,7 +1408,7 @@ void MassSubscribe() {
         DeserializationError error = deserializeJson(doc, response);
         batteryTemperature = doc["value"].as<float>();
         if (verboseDebugOutput)
-          Serial.println("batteryTemperature " + String(batteryTemperature));
+          Serial.println("batteryTemperatur: " + String(batteryTemperature));
         lastMQTTUpdateReceived = millis();
       });
 
@@ -1355,7 +1431,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       ACOutL1Watts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("ACOutL1Watts " + String(ACOutL1Watts));
+        Serial.println("ACOutL1Watts: " + String(ACOutL1Watts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1372,7 +1448,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       ACOutL2Watts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("ACOutL2Watts " + String(ACOutL2Watts));
+        Serial.println("ACOutL2Watts: " + String(ACOutL2Watts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1389,7 +1465,7 @@ void MassSubscribe() {
       DeserializationError error = deserializeJson(doc, response);
       ACOutL3Watts = doc["value"].as<float>();
       if (verboseDebugOutput)
-        Serial.println("ACOutL3Watts " + String(ACOutL3Watts));
+        Serial.println("ACOutL3Watts: " + String(ACOutL3Watts));
       lastMQTTUpdateReceived = millis();
     });
 
@@ -1397,7 +1473,6 @@ void MassSubscribe() {
   } else {
     awaitingDataToBeReceived[11] = false;
   };
-
 
   // Multiplus mode
 
@@ -1452,6 +1527,7 @@ void MassUnsubscribe() {
   String commonTopicStart = "N/" + VictronInstallationID + "/system/0/";
   String multiplusModeTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
   String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+  String commonLedsTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Leds/";
 
   if (GENERAL_SETTINGS_GRID_IN_L1_IS_USED)
     client.unsubscribe(commonTopicStart + "Ac/Grid/L1/Power");
@@ -1470,13 +1546,18 @@ void MassUnsubscribe() {
   client.unsubscribe(commonTopicStart + "Dc/Battery/Power");
 
   switch (GENERAL_SETTINGS_ADDITIONAL_INFO) {
-    case 2:
+    case 1:
       client.unsubscribe(commonTopicStart + "Dc/Battery/TimeToGo");
       break;
-    case 3:
-      client.unsubscribe(solarChargerStateTopic);
+    case 2:
+      if (ESSIsBeingUsed) {
+        client.unsubscribe(commonLedsTopic + "Bulk");
+        client.unsubscribe(commonLedsTopic + "Absorption");
+        client.unsubscribe(commonLedsTopic + "Float");
+      } else
+        client.unsubscribe(solarChargerStateTopic);
       break;
-    case 4:
+    case 3:
       client.unsubscribe(commonTopicStart + "Dc/Battery/Temperature");
       break;
     default:
