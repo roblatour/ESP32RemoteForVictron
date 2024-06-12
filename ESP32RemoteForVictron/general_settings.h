@@ -1,3 +1,7 @@
+#define GENERAL_SETTINGS_AMOLED_VERSION                                   1    // set to 1 if you are using the Lilygo T-Display S3 AMOLED v1
+                                                                               // set to 2 if you are using the Lilygo T-Display S3 AMOLED v2 
+                                                                               // for more information please see: https://www.lilygo.cc/en-ca/products/t-display-s3-amoled
+																			   
 #define GENERAL_SETTINGS_USB_ON_THE_LEFT                               true    // set to true to plug in the USB power cable from the left, set to false to plug in the USB power cable from the right
 
 #define GENERAL_SETTINGS_ALLOW_CHANGING_INVERTER_AND_CHARGER_MODES     true    // set to true to allow the user to change the Multiplus charger and inverter modes with the buttons on this device, otherwise to prevent that set to false

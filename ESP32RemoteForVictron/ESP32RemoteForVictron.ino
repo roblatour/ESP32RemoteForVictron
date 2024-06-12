@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.5)
+// ESP32 Victron Monitor (version 1.7)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.7 - updated to support both v1 and v2 of the Lily-go T-DISPLAY S3 AMOLED boards
 // version 1.6 - updated to take charging state from Multiplus if in ESS mode
 // version 1.5 - added an option to specify what is displayed under the battery percent charged; added an option to round numbers
 // version 1.4 - added deep sleep option to save power when the screen doesn't need to be on, added option to allow another system to send the periodic keep alive requests
@@ -25,7 +26,7 @@
 // USB CDC On Boot:                 Enabled
 // CPU Frequency:                   240MHz (WiFi)
 // Core Debug Level:                None
-// USB DFU On Boot:                 Enabled
+// USB DFU On Boot:                 Enabled (Requiries USB-OTG Mode)
 // Erase All Flash Before Upload:   Disabled
 // Events Run On:                   Core 1
 // Flash Mode:                      QIO 80Mhz
@@ -51,7 +52,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.6)";
+const String programVersion = "(Version 1.7)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -159,21 +160,21 @@ int sleepHour, sleepMinute, wakeHour, wakeMinute;
 bool generalDebugOutput = false;
 bool verboseDebugOutput = false;
 
-void SetGreenLEDOn(bool turnOn) {
+void SetGreenLEDOff() {
+
+  // With the AMOLED v1 board pin 38 should be set to LOW to turn off the green LED
 
   const int greenLEDPin = 38;
-  static bool doOnce = true;
+  pinMode(greenLEDPin, OUTPUT);
+  digitalWrite(greenLEDPin, LOW);
+}
 
-  if (doOnce) {
+void SetDisplayOn() {
 
-    pinMode(greenLEDPin, OUTPUT);
-    doOnce = false;
-  };
-
-  if (turnOn)
-    digitalWrite(greenLEDPin, HIGH);
-  else
-    digitalWrite(greenLEDPin, LOW);
+  // On the AMOLED v2 board pin 38 must be set to HIGH for the display to work
+  const int DisplayPin = 38;
+  pinMode(DisplayPin, OUTPUT);
+  digitalWrite(DisplayPin, HIGH);
 }
 
 void SetupTopAndBottomButtons() {
@@ -1157,7 +1158,7 @@ void SubscribeToGetChargingStateFromMultiplus() {
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     int LEDIndicator = doc["value"].as<int>();
-    if (LEDIndicator == 1) 
+    if (LEDIndicator == 1)
       chargingState = "Absorption";
     if (verboseDebugOutput)
       Serial.println("Multiplus Absorption LED is on");
@@ -2051,7 +2052,11 @@ void setup() {
     Serial.println("");
   };
 
-  SetGreenLEDOn(false);
+  if (GENERAL_SETTINGS_AMOLED_VERSION == 1) {
+    SetGreenLEDOff();
+  } else {
+    SetDisplayOn();
+  };
 
   SetupTopAndBottomButtons();
 
