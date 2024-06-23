@@ -20,7 +20,11 @@
 //
 // Physical board:                  LILYGO T-Display-S3 AMOLED
 //
-// Board in Arduino board manager:  ESP32S3 Dev Module
+// Ardunio - File - Preferences - Additional Board Manager URLs: https://dl.espressif.com/dl/package_esp32_index.json
+//
+// Arduino - Board Manager - esp32: version 2.0.11  (ref: https://forum.arduino.cc/t/esp32-s3-sudden-compile-error/1177237/24)
+//
+// Arduino Board selection:         ESP32S3 Dev Module
 //
 // Arduino Tools settings:
 // USB CDC On Boot:                 Enabled
@@ -101,7 +105,7 @@ enum multiplusFunction { Charger,
 int topButton, bottomButton;
 
 // Display
-#include <TFT_eSPI.h>              // download and use the entire TFT_eSPI https://github.com/Xinyuan-LilyGO/T-Display-S3-AMOLED/tree/main/lib
+#include <TFT_eSPI.h>              // download and use the entire TFT_eSPI https://github.com/Xinyuan-LilyGO/LilyGo-AMOLED-Series/tree/master/libdeps
 #include "rm67162.h"               // included in the github package for this sketch, but also available from https://github.com/Xinyuan-LilyGO/T-Display-S3-AMOLED/tree/main/examples/factory
 #include "fonts\NotoSansBold15.h"  // included in the github package for this sketch, based on https://fonts.google.com/noto/specimen/Noto+Sans
 #include "fonts\NotoSansBold24.h"  // "
@@ -112,7 +116,7 @@ TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&tft);
 
 // MQTT
-#include <EspMQTTClient.h>  // https://github.com/plapointe6/EspMQTTClient (v1.13.3)
+#include <EspMQTTClient.h>         // https://github.com/plapointe6/EspMQTTClient (v1.13.3)
 #include <string.h>
 
 EspMQTTClient client(
