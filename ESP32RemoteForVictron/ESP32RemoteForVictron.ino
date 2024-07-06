@@ -14,7 +14,7 @@
 // version 1.1 - integrated a timer for automatically turning the display on/off at specified times
 // version 1   - initial release
 //
-// Design and tested with a Victron Multiplus II 12v system, monitored by a Rapsberry Pi Zero 2 W running Victron Venus Firmware v3.3
+// Design and tested with a Victron Multiplus II 12v system, monitored by a Raspberry Pi Zero 2 W running Victron Venus Firmware v3.3
 //
 // Compile and upload using Arduino IDE (2.3.2 or greater)
 //
@@ -30,7 +30,7 @@
 // USB CDC On Boot:                 Enabled
 // CPU Frequency:                   240MHz (WiFi)
 // Core Debug Level:                None
-// USB DFU On Boot:                 Enabled (Requiries USB-OTG Mode)
+// USB DFU On Boot:                 Enabled (Requires USB-OTG Mode)
 // Erase All Flash Before Upload:   Disabled
 // Events Run On:                   Core 1
 // Flash Mode:                      QIO 80Mhz
@@ -73,7 +73,7 @@ String SolarChargerThreeDigitID;
 
 const int dataPoints = 13;
 bool awaitingDataToBeReceived[dataPoints];
-bool awaitingInitialTrasmissionOfAllDataPoints;
+bool awaitingInitialTransmissionOfAllDataPoints;
 
 float gridInL1Watts = 0.0;
 float gridInL2Watts = 0.0;
@@ -252,7 +252,7 @@ void ChangeMultiplusMode(multiplusFunction option) {
     RefreshDisplay();
   };
 
-  // wait here for one second and also, if needed, for the user to release the button that they had previousily pressed to get here
+  // wait here for one second and also, if needed, for the user to release the button that they had previously pressed to get here
   msTimer.begin(1000);
 
   // ensure whichever button was last pressed is now released
@@ -494,7 +494,7 @@ void CheckButtons() {
   };
 }
 
-String ConvertSecondstoDayHoursMinutes(int n) {
+String ConvertSecondsToDayHoursMinutes(int n) {
 
   String sDays, sHours, sMinutes;
 
@@ -633,7 +633,7 @@ bool ShouldTheDisplayBeOn() {
   static int timeToSleep = sleepHour * 60 + sleepMinute;
 
   static int lastMinuteChecked = -1;
-  static bool theDisplayHadBeenPreviousilyKeptOn = true;
+  static bool theDisplayHadBeenPreviouslyKeptOn = true;
   static bool lastReturnValue = true;
 
   bool returnValue = lastReturnValue;
@@ -649,7 +649,7 @@ bool ShouldTheDisplayBeOn() {
 
       if (millis() <= keepTheDisplayOnUntilAtLeastThisTime) {
 
-        theDisplayHadBeenPreviousilyKeptOn = true;
+        theDisplayHadBeenPreviouslyKeptOn = true;
         returnValue = true;
 
       } else {
@@ -666,9 +666,9 @@ bool ShouldTheDisplayBeOn() {
 
         int iSecond = second(utc_now);
 
-        if ((iSecond == 0) || (theDisplayHadBeenPreviousilyKeptOn)) {
+        if ((iSecond == 0) || (theDisplayHadBeenPreviouslyKeptOn)) {
 
-          theDisplayHadBeenPreviousilyKeptOn = false;
+          theDisplayHadBeenPreviouslyKeptOn = false;
 
           // get the current local time
           tm *timeinfo = localtime(&utc_now);
@@ -814,16 +814,16 @@ void UpdateDisplay() {
 
   tryToRestoreConnection = true;
 
-  // wait until data for all datapoints has been received prior to showing the display
+  // wait until data for all data points have been received prior to showing the display
   // while waiting display an appropriate message
 
-  if (awaitingInitialTrasmissionOfAllDataPoints) {
+  if (awaitingInitialTransmissionOfAllDataPoints) {
 
     for (int i = 0; i < dataPoints; i++)
       if (awaitingDataToBeReceived[i]) {
 
         if (verboseDebugOutput)
-          Serial.println("Awating data on data point " + String(i));
+          Serial.println("Awaiting data on data point " + String(i));
 
         sprite.fillSprite(TFT_BLACK);
         sprite.loadFont(NotoSansBold36);
@@ -835,8 +835,8 @@ void UpdateDisplay() {
 
         return;
       };
-    // if we have reached this point data for all datapoints has been received
-    awaitingInitialTrasmissionOfAllDataPoints = false;
+    // if we have reached this point data for all data points have been received
+    awaitingInitialTransmissionOfAllDataPoints = false;
 
     if (MQTTTransmissionLost) {
       MQTTTransmissionLost = false;
@@ -1042,7 +1042,7 @@ void UpdateDisplay() {
 
   sprite.unloadFont();
 
-  // Draw an upward triangle if the battery is charging or a downward triagle if it is discharging
+  // Draw an upward triangle if the battery is charging or a downward triangle if it is discharging
   // However, if it is neither charging or discharging then do not draw any triangle at all
 
   if (batteryPower > 0.0F) {
@@ -1092,7 +1092,7 @@ void ResetGlobals() {
   MultiplusThreeDigitID = String(MultiplusThreeDigitIDArray);
   SolarChargerThreeDigitID = String(SolarChargerThreeDigitIDArray);
 
-  awaitingInitialTrasmissionOfAllDataPoints = true;
+  awaitingInitialTransmissionOfAllDataPoints = true;
   for (int i = 0; i < dataPoints; i++)
     awaitingDataToBeReceived[i] = true;
 
