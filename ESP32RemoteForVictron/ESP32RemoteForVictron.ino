@@ -1019,7 +1019,7 @@ void UpdateDisplay() {
   if ((GENERAL_SETTINGS_ADDITIONAL_INFO == 1) && (batteryTTG != 0)) {
 
     // show time to go
-    String TimeToGo = ConvertSecondstoDayHoursMinutes(int(batteryTTG));
+    String TimeToGo = ConvertSecondsToDayHoursMinutes(int(batteryTTG));
     sprite.drawString(TimeToGo, midX, midY + 50);
   } else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 2) {
 
@@ -1413,7 +1413,7 @@ void MassSubscribe() {
         DeserializationError error = deserializeJson(doc, response);
         batteryTemperature = doc["value"].as<float>();
         if (verboseDebugOutput)
-          Serial.println("batteryTemperatur: " + String(batteryTemperature));
+          Serial.println("batteryTemperature: " + String(batteryTemperature));
         lastMQTTUpdateReceived = millis();
       });
 
@@ -1708,7 +1708,7 @@ void convertSecondsToTime(int seconds, int &hours, int &minutes, int &remainingS
 void GotoDeepSleep() {
 
   // this routine is only called when it is time to send the ESP32 to sleep
-  // accourding the logic below counts on the fact that the current time is currently within the sleep period
+  // according the logic below counts on the fact that the current time is currently within the sleep period
 
   int toleranceSeconds = 15;  // don't bother going to sleep if a wakeup would otherwise happen in this many seconds
 
