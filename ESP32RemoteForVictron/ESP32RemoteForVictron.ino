@@ -1019,7 +1019,7 @@ void UpdateDisplay() {
   if ((GENERAL_SETTINGS_ADDITIONAL_INFO == 1) && (batteryTTG != 0)) {
 
     // show time to go
-    String TimeToGo = ConvertSecondstoDayHoursMinutes(int(batteryTTG));
+    String TimeToGo = ConvertSecondsToDayHoursMinutes(int(batteryTTG));
     sprite.drawString(TimeToGo, midX, midY + 50);
   } else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 2) {
 
