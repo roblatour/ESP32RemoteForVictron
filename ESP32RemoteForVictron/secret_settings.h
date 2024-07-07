@@ -8,8 +8,8 @@
                                                                            // note: in any or all of the three cases above if you use a '+' you can look in the Serial Monitor output to see what the discovered IDs are and then come back and change the setting(s) above
 
 #define SECRET_SETTINGS_MQTT_Broker             "venus.local"              // generally you can use "venus.local" but this may also be an IP address such as 192.168.1.195
-#define SECRET_SETTINGS_MQTT_UserID             "Anonymous"                // if you have MQTT security setup, you can enter your MQQT User ID here, otherwise leave the set to  "Anonymous"
-#define SECRET_SETTINGS_MQTT_Password           "Anonymous"                // if you have MQTT security setup, you can enter your MQQT Password here, otherwise leave the set to  "Anonymous"
+#define SECRET_SETTINGS_MQTT_UserID             "Anonymous"                // if you have MQTT security setup, you can enter your MQTT User ID here, otherwise leave the set to  "Anonymous"
+#define SECRET_SETTINGS_MQTT_Password           "Anonymous"                // if you have MQTT security setup, you can enter your MQTT Password here, otherwise leave the set to  "Anonymous"
 #define SECRET_SETTINGS_MQTT_ClientName         "ESP32RemoteForVictron"
 #define SECRET_SETTINGS_MQTT_Port               1883
 

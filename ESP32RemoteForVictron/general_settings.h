@@ -20,13 +20,13 @@
 
 #define GENERAL_SETTINGS_SHOW_BATTERY_AS_RED                             20    // show battery as red if its percentage charged is at or below this number   
 
-#define GENERAL_SETTINGS_ADDITIONAL_INFO                                  2    // show additonal information under battery percent:
+#define GENERAL_SETTINGS_ADDITIONAL_INFO                                  2    // show additional information under battery percent:
                                                                                // 0 = do not show any additional info  
                                                                                // 1 = show Time To Go (remaining battery time); note this value is only available when the battery is discharging
                                                                                // 2 = show Solar Charger (mppt) / Multiplus charging state: Off/Fault/Bulk/Absorption/Float/Storage/Equalize/ESS
                                                                                // 3 = show battery temperature
 
-                                                                               // if any of the following are not used in your installation then you can set the assocated value(s) below to false to reduce unneeded MQTT traffic:
+                                                                               // if any of the following are not used in your installation then you can set the associated value(s) below to false to reduce unneeded MQTT traffic:
 #define GENERAL_SETTINGS_GRID_IN_L1_IS_USED                            true    // set to true if Grid IN L1 is used in your installation, otherwise set to false
 #define GENERAL_SETTINGS_GRID_IN_L2_IS_USED                            true    // set to true if Grid IN L2 is used in your installation, otherwise set to false
 #define GENERAL_SETTINGS_GRID_IN_L3_IS_USED                            true    // set to true if Grid IN L3 is used in your installation, otherwise set to false
