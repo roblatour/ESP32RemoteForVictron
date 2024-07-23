@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.7)
+// ESP32 Victron Monitor (version 1.8)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.8 - updated code for better memory management, included a few additional comments
 // version 1.7 - updated to support both v1 and v2 of the Lily-go T-DISPLAY S3 AMOLED boards
 // version 1.6 - updated to take charging state from Multiplus if in ESS mode
 // version 1.5 - added an option to specify what is displayed under the battery percent charged; added an option to round numbers
@@ -19,12 +20,11 @@
 // Compile and upload using Arduino IDE (2.3.2 or greater)
 //
 // Physical board:                  LILYGO T-Display-S3 AMOLED
+// Arduino - Board Manager:         esp32 by Espressif Systems : version 2.0.11  (ref: https://forum.arduino.cc/t/esp32-s3-sudden-compile-error/1177237/24)
+// Arduino Board selection:         ESP32S3 Dev Module
 //
 // Ardunio - File - Preferences - Additional Board Manager URLs: https://dl.espressif.com/dl/package_esp32_index.json
 //
-// Arduino - Board Manager - esp32: version 2.0.11  (ref: https://forum.arduino.cc/t/esp32-s3-sudden-compile-error/1177237/24)
-//
-// Arduino Board selection:         ESP32S3 Dev Module
 //
 // Arduino Tools settings:
 // USB CDC On Boot:                 Enabled
@@ -56,7 +56,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.7)";
+const String programVersion = "(Version 1.8)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -91,16 +91,19 @@ float ACOutL1Watts = 0.0;
 float ACOutL2Watts = 0.0;
 float ACOutL3Watts = 0.0;
 
-enum multiplusMode { ChargerOnly,
-                     InverterOnly,
-                     On,
-                     Off,
-                     Unknown
+enum multiplusMode {
+  ChargerOnly,
+  InverterOnly,
+  On,
+  Off,
+  Unknown
 };
 multiplusMode currentMultiplusMode = Unknown;
 
-enum multiplusFunction { Charger,
-                         Inverter };
+enum multiplusFunction {
+  Charger,
+  Inverter
+};
 
 int topButton, bottomButton;
 
@@ -415,7 +418,6 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
     if (generalDebugOutput)
       Serial.println("No change required to the multiplus mode");
-
   } else {
 
     String modeCodeValue;
@@ -519,7 +521,7 @@ String ConvertSecondsToDayHoursMinutes(int n) {
     sMinutes = String(minutes);
 
   return (sDays + " " + sHours + ":" + sMinutes);
-  //return (sDays + "D " + sHours + "H " + sMinutes + "M");
+  // return (sDays + "D " + sHours + "H " + sMinutes + "M");
 }
 
 float roundFloat(float value, int decimals) {
@@ -602,7 +604,6 @@ void KeepTheDisplayOnForThisManyMinutes(int minutes) {
     Serial.println(minutes);
   };
 }
-
 
 void RefreshTimeOnceADay(bool initialTimeSetRequest = false) {
 
@@ -1152,6 +1153,7 @@ void SubscribeToGetChargingStateFromMultiplus() {
     if (verboseDebugOutput)
       Serial.println("Multiplus Bulk LED is on");
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 
   msTimer.begin(100);
@@ -1167,6 +1169,7 @@ void SubscribeToGetChargingStateFromMultiplus() {
     if (verboseDebugOutput)
       Serial.println("Multiplus Absorption LED is on");
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 
   msTimer.begin(100);
@@ -1182,6 +1185,7 @@ void SubscribeToGetChargingStateFromMultiplus() {
     if (verboseDebugOutput)
       Serial.println("Multiplus Float LED is on");
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 
   msTimer.begin(100);
@@ -1243,6 +1247,7 @@ void SubscribeToGetChargingStateFromSolarCharger() {
     };
 
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 }
 
@@ -1274,6 +1279,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("gridInL1Watts: " + String(gridInL1Watts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1292,6 +1298,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("gridInL2Watts: " + String(gridInL2Watts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1310,6 +1317,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("gridInL3Watts: " + String(gridInL3Watts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1328,6 +1336,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("solarWatts: " + String(solarWatts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1346,6 +1355,7 @@ void MassSubscribe() {
     if (verboseDebugOutput)
       Serial.println("batterySOC: " + String(batterySOC));
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 
   msTimer.begin(100);
@@ -1359,6 +1369,7 @@ void MassSubscribe() {
     if (verboseDebugOutput)
       Serial.println("batteryPower: " + String(batteryPower));
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 
   msTimer.begin(100);
@@ -1383,6 +1394,7 @@ void MassSubscribe() {
         if (verboseDebugOutput)
           Serial.println("batteryTTG: " + String(batteryTTG));
         lastMQTTUpdateReceived = millis();
+        doc.clear();
       });
 
       awaitingDataToBeReceived[7] = false;
@@ -1415,6 +1427,7 @@ void MassSubscribe() {
         if (verboseDebugOutput)
           Serial.println("batteryTemperature: " + String(batteryTemperature));
         lastMQTTUpdateReceived = millis();
+        doc.clear();
       });
 
       msTimer.begin(100);
@@ -1438,6 +1451,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("ACOutL1Watts: " + String(ACOutL1Watts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1455,6 +1469,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("ACOutL2Watts: " + String(ACOutL2Watts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1472,6 +1487,7 @@ void MassSubscribe() {
       if (verboseDebugOutput)
         Serial.println("ACOutL3Watts: " + String(ACOutL3Watts));
       lastMQTTUpdateReceived = millis();
+      doc.clear();
     });
 
     msTimer.begin(100);
@@ -1517,6 +1533,7 @@ void MassSubscribe() {
         break;
     };
     lastMQTTUpdateReceived = millis();
+    doc.clear();
   });
 
   msTimer.begin(100);
@@ -1696,7 +1713,6 @@ bool isNumeric(String str) {
   }
   return true;
 }
-
 
 void convertSecondsToTime(int seconds, int &hours, int &minutes, int &remainingSeconds) {
   hours = seconds / 3600;  // 3600 seconds in an hour
@@ -1904,7 +1920,6 @@ void SetDisplayOrientation() {
   else
     lcd_setRotation(1);
 };
-
 
 bool parseTimeString(String timeString, int &hours, int &minutes) {
 
