@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.8)
+// ESP32 Victron Monitor (version 1.9)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.9 - corrected for screen refresh timings, deep sleep duration beyond 35 minutes, millis roll over (which happens approximately every 49 days)
 // version 1.8 - updated code for better memory management, included a few additional comments
 // version 1.7 - updated to support both v1 and v2 of the Lily-go T-DISPLAY S3 AMOLED boards
 // version 1.6 - updated to take charging state from Multiplus if in ESS mode
@@ -24,7 +25,6 @@
 // Arduino Board selection:         ESP32S3 Dev Module
 //
 // Ardunio - File - Preferences - Additional Board Manager URLs: https://dl.espressif.com/dl/package_esp32_index.json
-//
 //
 // Arduino Tools settings:
 // USB CDC On Boot:                 Enabled
@@ -56,7 +56,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.8)";
+const String programVersion = "(Version 1.9)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -119,7 +119,7 @@ TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&tft);
 
 // MQTT
-#include <EspMQTTClient.h>         // https://github.com/plapointe6/EspMQTTClient (v1.13.3)
+#include <EspMQTTClient.h>          // https://github.com/plapointe6/EspMQTTClient (v1.13.3)
 #include <string.h>
 
 EspMQTTClient client(
@@ -131,7 +131,7 @@ EspMQTTClient client(
   SECRET_SETTINGS_MQTT_ClientName,
   SECRET_SETTINGS_MQTT_Port);
 
-unsigned long lastMQTTUpdateReceived = 0;
+unsigned long lastMQTTUpdateReceived = 0UL;
 
 // JSON
 #include <ArduinoJson.h>  // Ardiuno Library Manager, by Benoit Blanchon, https://arduinojson.org/?utm_source=meta&utm_medium=library.properties (v7.0.4)
@@ -153,8 +153,8 @@ const char *tertiaryNTPSever = GENERAL_SETTINGS_TERTIARY_TIME_SERVER;
 const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
 
 bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
-unsigned long nextTimeCheck = 0;
-unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0;
+unsigned long nextTimeCheck = 0UL;
+unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0UL;
 
 // report a timeout after this many seconds of no data being received
 const int timeOutInSeconds = 61;
@@ -233,7 +233,7 @@ void ChangeMultiplusMode(multiplusFunction option) {
     delay(5000);
 
     // keep the display on for at least one minute more
-    if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
+    if ((millis() + 60UL * 1000UL) > holdkeepTheDisplayOnUntilAtLeastThisTime)
       KeepTheDisplayOnForThisManyMinutes(1);
     else
       keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
@@ -271,7 +271,7 @@ void ChangeMultiplusMode(multiplusFunction option) {
       Serial.println("Timed out waiting for the user to release the button, no change will be applied");
 
     // keep the display on for at least one minute more
-    if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
+    if ((millis() + 60UL * 1000UL) > holdkeepTheDisplayOnUntilAtLeastThisTime)
       KeepTheDisplayOnForThisManyMinutes(1);
     else
       keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
@@ -563,41 +563,56 @@ void printLocalTime() {
 
 bool SetTime() {
 
-  bool returnValue;
-
-  // configure NTP Server
+  // Configure NTP Server
   configTime(0, 0, primaryNTPServer, secondaryNTPServer, tertiaryNTPSever);
 
-  // set the time zone
-  setenv("TZ", timeZone, 1);
+  // Set the time zone
+  if (setenv("TZ", timeZone, 1) != 0) {
+    if (generalDebugOutput)
+      Serial.println("Error setting time zone");
+    return false;
+  };
+
   tzset();
 
   struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
-
-    time_t t = mktime(&timeinfo);
-    struct timeval now = { .tv_sec = t };
-    settimeofday(&now, NULL);
-    if (generalDebugOutput)
-      Serial.printf("Time set to: %s", asctime(&timeinfo));
-    returnValue = true;
-
-  } else {
-
+  if (!getLocalTime(&timeinfo)) {
     if (generalDebugOutput)
       Serial.println("Failed to obtain time from time server");
-    returnValue = false;
+    return false;
   };
 
-  if (generalDebugOutput)
-    msTimer.begin(200);
+  time_t t = mktime(&timeinfo);
+  if (t == -1) {
+    if (generalDebugOutput)
+      Serial.println("Error converting time to time_t");
+    return false;
+  };
 
-  return returnValue;
+  struct timeval now = { .tv_sec = t };
+  if (settimeofday(&now, NULL) != 0) {
+    if (generalDebugOutput)
+      Serial.println("Error setting system time");
+    return false;
+  };
+
+  if (generalDebugOutput) {
+    if (generalDebugOutput)
+      Serial.printf("Time set to: %s", asctime(&timeinfo));
+  };
+
+  if (generalDebugOutput) {
+    // wait for console updates to complete
+    const int timerInterval = 200;
+    msTimer.begin(timerInterval);
+  };
+
+  return true;
 }
 
 void KeepTheDisplayOnForThisManyMinutes(int minutes) {
 
-  keepTheDisplayOnUntilAtLeastThisTime = millis() + minutes * 60 * 1000;
+  keepTheDisplayOnUntilAtLeastThisTime = millis() + minutes * 60UL * 1000UL;
 
   if (generalDebugOutput) {
     Serial.print("Keep display active for this many minutes: ");
@@ -605,27 +620,27 @@ void KeepTheDisplayOnForThisManyMinutes(int minutes) {
   };
 }
 
-void RefreshTimeOnceADay(bool initialTimeSetRequest = false) {
+void RefreshTimeOnceADay(bool forceTimeSet = false) {
 
-  static bool pendingInitialTimeSetRequest = true;
+  const int RETRY_INTERVAL_IN_MINUTES = 20;
+  const unsigned long RETRY_INTERVAL_IN_MILLIS = RETRY_INTERVAL_IN_MINUTES * 60UL * 1000UL;
+  const unsigned long ONE_DAY_IN_MILLIS = 24UL * 60UL * 60UL * 1000UL;
 
-  if (pendingInitialTimeSetRequest)
-    if (!initialTimeSetRequest)
-      return;
+  if (forceTimeSet || (millis() > nextTimeCheck)) {
 
-  if (millis() > nextTimeCheck) {
+    if (SetTime()) {
+      nextTimeCheck = millis() + ONE_DAY_IN_MILLIS;
 
-    if (SetTime())
-      nextTimeCheck = millis() + 24 * 60 * 60 * 1000;  // update the time again in 24 hours
-    else {
-      int checkAgainInThisManyMinutes = 20;
-      nextTimeCheck = millis() + checkAgainInThisManyMinutes * 60 * 1000;
-      // keep the display on until the time can be successfully retrieved from the NTP server
-      KeepTheDisplayOnForThisManyMinutes(checkAgainInThisManyMinutes + 1);
+    } else {
+      nextTimeCheck = millis() + RETRY_INTERVAL_IN_MILLIS;
+      // keep the display on until the time can be successfully set from the NTP server
+      KeepTheDisplayOnForThisManyMinutes(RETRY_INTERVAL_IN_MINUTES + 1);
     };
-  };
 
-  pendingInitialTimeSetRequest = false;
+    // handle the 49 day millis() rollover event by restarting the ESP32
+    if (nextTimeCheck < millis())
+      ESP.restart();
+  };
 };
 
 bool ShouldTheDisplayBeOn() {
@@ -717,7 +732,7 @@ bool ShouldTheDisplayBeOn() {
 
 void UpdateDisplay() {
 
-  static unsigned long nextDisplayUpdate = 0;
+  static unsigned long nextDisplayUpdate = 0UL;
   static bool tryToRestoreConnection = true;
   static bool MQTTTransmissionLost = false;
 
@@ -730,8 +745,8 @@ void UpdateDisplay() {
   if (!theDisplayIsCurrentlyOn && theDisplayShouldBeOn)
     SetTheDisplayOn(true);
 
-  // only update the display at intervals set by the value in GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES
-  if (millis() < (nextDisplayUpdate + GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000))
+  // only update the display when its time has come
+  if (millis() < nextDisplayUpdate)
     return;
 
   // only update the display if it is on
@@ -846,7 +861,7 @@ void UpdateDisplay() {
     };
   };
 
-  nextDisplayUpdate = millis() + GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000;
+  nextDisplayUpdate = millis() + ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL);
 
   int x, y;
 
@@ -1075,6 +1090,26 @@ void UpdateDisplay() {
     };
   };
 
+  // used for testing only - display the date and time
+  //
+  //sprite.loadFont(NotoSansBold24);
+  //sprite.setTextColor(TFT_RED, TFT_BLACK);
+  //
+  //if (GENERAL_SETTINGS_USB_ON_THE_LEFT) {
+  //  sprite.setTextDatum(TL_DATUM);
+  //} else {
+  //  sprite.setTextDatum(TR_DATUM);
+  //};
+  //
+  //struct tm timeinfo;
+  //getLocalTime(&timeinfo);
+  //String currentTimeString = (String)asctime(&timeinfo) + " ";
+  //
+  //sprite.drawString(currentTimeString, 0, 50);
+  //sprite.unloadFont();
+  //
+  // end of testing block
+
   RefreshDisplay();
 }
 
@@ -1118,15 +1153,19 @@ void ResetGlobals() {
 
 void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
-  static unsigned long nextUpdate = 0;
+  static unsigned long nextUpdate = 0UL;
 
   if ((forceKeepAliveRequestNow) || (GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS)) {
 
     if ((forceKeepAliveRequestNow) || (millis() > nextUpdate)) {
 
-      const int secondsBetweenKeepAliveRequests = 30;
+      const unsigned long secondsBetweenKeepAliveRequests = 30UL;
 
-      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000;
+      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000UL;
+
+      // handle the 49 day millis() rollover event by restarting the ESP32
+      if (nextTimeCheck < millis())
+        ESP.restart();
 
       client.publish("R/" + VictronInstallationID + "/keepalive", "");
 
@@ -1728,7 +1767,7 @@ void GotoDeepSleep() {
 
   int toleranceSeconds = 15;  // don't bother going to sleep if a wakeup would otherwise happen in this many seconds
 
-  uint64_t secondsInDeepSleep = 0;
+  int secondsInDeepSleep = 0;
 
   String sleepTime = String(GENERAL_SETTINGS_SLEEP_TIME);
 
@@ -1852,7 +1891,7 @@ void GotoDeepSleep() {
     msTimer.begin(1000);
 
     const uint64_t convertSecondsToMicroSeconds = 1000000;
-    uint64_t DeepSleepMicroSeconds = secondsInDeepSleep * convertSecondsToMicroSeconds;
+    unsigned long long DeepSleepMicroSeconds = secondsInDeepSleep * convertSecondsToMicroSeconds;
     esp_sleep_enable_timer_wakeup(DeepSleepMicroSeconds);
     esp_deep_sleep_start();
 
