@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.9)
+// ESP32 Victron Monitor (version 1.9.1)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.9.1 - corrected for millis roll over
 // version 1.9 - corrected for screen refresh timings, deep sleep duration beyond 35 minutes, millis roll over (which happens approximately every 49 days)
 // version 1.8 - updated code for better memory management, included a few additional comments
 // version 1.7 - updated to support both v1 and v2 of the Lily-go T-DISPLAY S3 AMOLED boards
@@ -56,7 +57,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9)";
+const String programVersion = "(Version 1.9.1)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -638,8 +639,8 @@ void RefreshTimeOnceADay(bool forceTimeSet = false) {
     };
 
     // handle the 49 day millis() rollover event by restarting the ESP32
-    if (nextTimeCheck < millis())
-      ESP.restart();
+     if ((nextTimeCheck > 0UL) && (nextTimeCheck < millis()))
+       ESP.restart();
   };
 };
 
@@ -1164,7 +1165,7 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
       nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000UL;
 
       // handle the 49 day millis() rollover event by restarting the ESP32
-      if (nextTimeCheck < millis())
+      if ((nextTimeCheck > 0UL) && (nextTimeCheck < millis()))
         ESP.restart();
 
       client.publish("R/" + VictronInstallationID + "/keepalive", "");
