@@ -1,21 +1,23 @@
-// ESP32 Victron Monitor (version 1.9.1)
+// ESP32 Victron Monitor (version 1.9.2)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
-// version 1.9.1 - corrected for millis roll over
-// version 1.9 - corrected for screen refresh timings, deep sleep duration beyond 35 minutes, millis roll over (which happens approximately every 49 days)
-// version 1.8 - updated code for better memory management, included a few additional comments
-// version 1.7 - updated to support both v1 and v2 of the Lily-go T-DISPLAY S3 AMOLED boards
-// version 1.6 - updated to take charging state from Multiplus if in ESS mode
-// version 1.5 - added an option to specify what is displayed under the battery percent charged; added an option to round numbers
-// version 1.4 - added deep sleep option to save power when the screen doesn't need to be on, added option to allow another system to send the periodic keep alive requests
-// version 1.3 - added options to show/hide charger and/or inverter status
-// version 1.2 - added data gathering and reporting for Grid 2 input, Grid 3 input, and AC Load 3
-// version 1.1 - integrated a timer for automatically turning the display on/off at specified times
-// version 1   - initial release
+// version 1.9.2 - after further review removed unneeded millis() roll over logic;
+//                 thanks to Nonstle for pointing this out at: https://github.com/roblatour/ESP32RemoteForVictron/issues/4
+// version 1.9.1 - corrected for millis() roll over
+// version 1.9   - corrected for screen refresh timings, deep sleep duration beyond 35 minutes, millis() roll over (which happens approximately every 49 days)
+// version 1.8   - updated code for better memory management, included a few additional comments
+// version 1.7   - updated to support both v1 and v2 of the Lily-go T-DISPLAY S3 AMOLED boards
+// version 1.6   - updated to take charging state from Multiplus if in ESS mode
+// version 1.5   - added an option to specify what is displayed under the battery percent charged; added an option to round numbers
+// version 1.4   - added deep sleep option to save power when the screen doesn't need to be on, added option to allow another system to send the periodic keep alive requests
+// version 1.3   - added options to show/hide charger and/or inverter status
+// version 1.2   - added data gathering and reporting for Grid 2 input, Grid 3 input, and AC Load 3
+// version 1.1   - integrated a timer for automatically turning the display on/off at specified times
+// version 1     - initial release
 //
 // Design and tested with a Victron Multiplus II 12v system, monitored by a Raspberry Pi Zero 2 W running Victron Venus Firmware v3.3
 //
@@ -57,7 +59,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.1)";
+const String programVersion = "(Version 1.9.2)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -637,10 +639,7 @@ void RefreshTimeOnceADay(bool forceTimeSet = false) {
       // keep the display on until the time can be successfully set from the NTP server
       KeepTheDisplayOnForThisManyMinutes(RETRY_INTERVAL_IN_MINUTES + 1);
     };
-
-    // handle the 49 day millis() rollover event by restarting the ESP32
-     if ((nextTimeCheck > 0UL) && (nextTimeCheck < millis()))
-       ESP.restart();
+  
   };
 };
 
@@ -1162,11 +1161,7 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
       const unsigned long secondsBetweenKeepAliveRequests = 30UL;
 
-      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000UL;
-
-      // handle the 49 day millis() rollover event by restarting the ESP32
-      if ((nextTimeCheck > 0UL) && (nextTimeCheck < millis()))
-        ESP.restart();
+      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000UL;   
 
       client.publish("R/" + VictronInstallationID + "/keepalive", "");
 
