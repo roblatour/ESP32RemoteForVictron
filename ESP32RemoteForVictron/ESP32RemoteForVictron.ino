@@ -113,10 +113,10 @@ int topButton, bottomButton;
 // Display
 #include <TFT_eSPI.h>              // download and use the entire TFT_eSPI https://github.com/Xinyuan-LilyGO/LilyGo-AMOLED-Series/tree/master/libdeps
 #include "rm67162.h"               // included in the github package for this sketch, but also available from https://github.com/Xinyuan-LilyGO/T-Display-S3-AMOLED/tree/main/examples/factory
-#include "fonts\NotoSansBold15.h"  // included in the github package for this sketch, based on https://fonts.google.com/noto/specimen/Noto+Sans
-#include "fonts\NotoSansBold24.h"  // "
-#include "fonts\NotoSansBold36.h"  // "
-#include "fonts\NotoSansBold72.h"  // "
+#include "fonts/NotoSansBold15.h"  // included in the github package for this sketch, based on https://fonts.google.com/noto/specimen/Noto+Sans
+#include "fonts/NotoSansBold24.h"  // "
+#include "fonts/NotoSansBold36.h"  // "
+#include "fonts/NotoSansBold72.h"  // "
 
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&tft);
