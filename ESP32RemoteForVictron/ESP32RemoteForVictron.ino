@@ -781,7 +781,7 @@ void UpdateDisplay() {
   // deal with the case that no data has arrived beyond the timeout period
   // see the notes in the general_settings.h file for more information
 
-  if (millis() > (lastMQTTUpdateReceived + timeOutInMilliSeconds)) {
+  if (millis() - lastMQTTUpdateReceived > timeOutInMilliSeconds) {
 
     sprite.fillSprite(TFT_BLACK);
     sprite.loadFont(NotoSansBold24);
