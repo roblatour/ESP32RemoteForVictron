@@ -146,7 +146,6 @@ FireTimer msTimer;
 // Time stuff
 #include <ESP32Time.h>
 #include <TimeLib.h>   // version 1.6.1  https://www.arduino.cc/reference/en/libraries/time/
-#include <Timezone.h>  // Include the Timezone library
 #include <WiFi.h>
 #include <time.h>
 
