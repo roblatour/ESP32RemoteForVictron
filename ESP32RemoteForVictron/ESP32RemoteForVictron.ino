@@ -1152,15 +1152,13 @@ void ResetGlobals() {
 
 void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
-  static unsigned long nextUpdate = 0UL;
+  static unsigned long lastMqttUpdate = 0UL;
 
   if ((forceKeepAliveRequestNow) || (GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS)) {
 
-    if ((forceKeepAliveRequestNow) || (millis() > nextUpdate)) {
+    if ((forceKeepAliveRequestNow) || (millis() - lastMqttUpdate > GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS_INTERVAL)) {
 
-      const unsigned long secondsBetweenKeepAliveRequests = 30UL;
-
-      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000UL;   
+      lastMqttUpdate = millis();   
 
       client.publish("R/" + VictronInstallationID + "/keepalive", "");
 
