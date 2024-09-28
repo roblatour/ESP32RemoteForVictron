@@ -629,7 +629,7 @@ void RefreshTimeOnceADay(bool forceTimeSet = false) {
   static unsigned long lastTimeCheck = 0UL;
   static unsigned long checkInterval = 0UL; 
 
-  if (forceTimeSet || (millis() - lastTimeCheck > checkInterval)) {
+  if (forceTimeSet || (millis() - lastTimeCheck >= checkInterval)) {
     lastTimeCheck = millis();
     if (SetTime()) {
       checkInterval = ONE_DAY_IN_MILLIS;
@@ -780,7 +780,7 @@ void UpdateDisplay() {
   // deal with the case that no data has arrived beyond the timeout period
   // see the notes in the general_settings.h file for more information
 
-  if (millis() - lastMQTTUpdateReceived > timeOutInMilliSeconds) {
+  if (millis() - lastMQTTUpdateReceived >= timeOutInMilliSeconds) {
 
     sprite.fillSprite(TFT_BLACK);
     sprite.loadFont(NotoSansBold24);
@@ -1155,7 +1155,7 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
   if ((forceKeepAliveRequestNow) || (GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS)) {
 
-    if ((forceKeepAliveRequestNow) || (millis() - lastMqttUpdate > GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS_INTERVAL)) {
+    if ((forceKeepAliveRequestNow) || (millis() - lastMqttUpdate >= GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS_INTERVAL)) {
 
       lastMqttUpdate = millis();   
 
