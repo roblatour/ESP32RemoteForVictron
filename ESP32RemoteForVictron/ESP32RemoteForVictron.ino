@@ -155,7 +155,6 @@ const char *tertiaryNTPSever = GENERAL_SETTINGS_TERTIARY_TIME_SERVER;
 const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
 
 bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
-unsigned long nextTimeCheck = 0UL;
 unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0UL;
 
 // report a timeout after this many seconds of no data being received
@@ -627,18 +626,18 @@ void RefreshTimeOnceADay(bool forceTimeSet = false) {
   const int RETRY_INTERVAL_IN_MINUTES = 20;
   const unsigned long RETRY_INTERVAL_IN_MILLIS = RETRY_INTERVAL_IN_MINUTES * 60UL * 1000UL;
   const unsigned long ONE_DAY_IN_MILLIS = 24UL * 60UL * 60UL * 1000UL;
+  static unsigned long lastTimeCheck = 0UL;
+  static unsigned long checkInterval = 0UL; 
 
-  if (forceTimeSet || (millis() > nextTimeCheck)) {
-
+  if (forceTimeSet || (millis() - lastTimeCheck > checkInterval)) {
+    lastTimeCheck = millis();
     if (SetTime()) {
-      nextTimeCheck = millis() + ONE_DAY_IN_MILLIS;
-
+      checkInterval = ONE_DAY_IN_MILLIS;
     } else {
-      nextTimeCheck = millis() + RETRY_INTERVAL_IN_MILLIS;
+      checkInterval = RETRY_INTERVAL_IN_MILLIS;
       // keep the display on until the time can be successfully set from the NTP server
       KeepTheDisplayOnForThisManyMinutes(RETRY_INTERVAL_IN_MINUTES + 1);
     };
-  
   };
 };
 
