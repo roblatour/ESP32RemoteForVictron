@@ -730,7 +730,7 @@ bool ShouldTheDisplayBeOn() {
 
 void UpdateDisplay() {
 
-  static unsigned long nextDisplayUpdate = 0UL;
+  static unsigned long lastDisplayUpdate = 0UL;
   static bool tryToRestoreConnection = true;
   static bool MQTTTransmissionLost = false;
 
@@ -744,7 +744,7 @@ void UpdateDisplay() {
     SetTheDisplayOn(true);
 
   // only update the display when its time has come
-  if (millis() < nextDisplayUpdate)
+  if (millis() - lastDisplayUpdate >= ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL))
     return;
 
   // only update the display if it is on
@@ -859,7 +859,7 @@ void UpdateDisplay() {
     };
   };
 
-  nextDisplayUpdate = millis() + ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL);
+  lastDisplayUpdate = millis();
 
   int x, y;
 
