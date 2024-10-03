@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.9.2)
+// ESP32 Victron Monitor (version 1.9.3)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.9.3 - removed reference to timezone.h; refactoring of variable names; updated comments for SECRET_SETTINGS_MQTT_Broker
 // version 1.9.2 - after further review removed unneeded millis() roll over logic;
 //                 thanks to Nonstle for pointing this out at: https://github.com/roblatour/ESP32RemoteForVictron/issues/4
 // version 1.9.1 - corrected for millis() roll over
@@ -59,7 +60,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.2)";
+const String programVersion = "(Version 1.9.3)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -1171,9 +1172,10 @@ void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
 void SubscribeToGetChargingStateFromMultiplus() {
 
-  String commonLedsTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Leds";
+  String commonTopic = "N/" + VictronInstallationID;
+  String ledsTopic = commonTopic + "/vebus/" + MultiplusThreeDigitID + "/Leds";
 
-  client.subscribe(commonLedsTopic + "/Bulk", [](const String &payload) {
+  client.subscribe(ledsTopic + "/Bulk", [](const String &payload) {
     awaitingDataToBeReceived[7] = false;
     String response = String(payload);
     JsonDocument doc;
@@ -1189,7 +1191,7 @@ void SubscribeToGetChargingStateFromMultiplus() {
 
   msTimer.begin(100);
 
-  client.subscribe(commonLedsTopic + "/Absorption", [](const String &payload) {
+  client.subscribe(ledsTopic + "/Absorption", [](const String &payload) {
     awaitingDataToBeReceived[7] = false;
     String response = String(payload);
     JsonDocument doc;
@@ -1205,7 +1207,7 @@ void SubscribeToGetChargingStateFromMultiplus() {
 
   msTimer.begin(100);
 
-  client.subscribe(commonLedsTopic + "/Float", [](const String &payload) {
+  client.subscribe(ledsTopic + "/Float", [](const String &payload) {
     awaitingDataToBeReceived[7] = false;
     String response = String(payload);
     JsonDocument doc;
@@ -1226,7 +1228,8 @@ void SubscribeToGetChargingStateFromMultiplus() {
 
 void SubscribeToGetChargingStateFromSolarCharger() {
 
-  String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+  String commonTopic = "N/" + VictronInstallationID;
+  String solarChargerStateTopic = commonTopic + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
 
   client.subscribe(solarChargerStateTopic, [](const String &payload) {
     String response = String(payload);
@@ -1268,7 +1271,10 @@ void SubscribeToGetChargingStateFromSolarCharger() {
     };
 
     if (ESSIsBeingUsed) {
-      String xsolarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+
+      String commonTopic = "N/" + VictronInstallationID;
+      String xsolarChargerStateTopic = commonTopic + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+
       client.unsubscribe(xsolarChargerStateTopic);
       SubscribeToGetChargingStateFromMultiplus();
     } else {
@@ -1289,8 +1295,9 @@ void MassSubscribe() {
   if (generalDebugOutput)
     Serial.println("Subscribing");
 
-  String commonTopicStart = "N/" + VictronInstallationID + "/system/0/";
-  String multiplusModeTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+  String commonTopic = "N/" + VictronInstallationID;
+  String system0Topic = commonTopic + "/system/0/";
+  String multiplusModeTopic = commonTopic + "/vebus/" + MultiplusThreeDigitID + "/Mode";
 
   // reset global variables so we will not start displaying information until all the subscribed data has been received
   ResetGlobals();
@@ -1301,7 +1308,7 @@ void MassSubscribe() {
 
   if (GENERAL_SETTINGS_GRID_IN_L1_IS_USED) {
 
-    client.subscribe(commonTopicStart + "Ac/Grid/L1/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Ac/Grid/L1/Power", [](const String &payload) {
       awaitingDataToBeReceived[0] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1320,7 +1327,7 @@ void MassSubscribe() {
 
   if (GENERAL_SETTINGS_GRID_IN_L2_IS_USED) {
 
-    client.subscribe(commonTopicStart + "Ac/Grid/L2/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Ac/Grid/L2/Power", [](const String &payload) {
       awaitingDataToBeReceived[1] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1339,7 +1346,7 @@ void MassSubscribe() {
 
   if (GENERAL_SETTINGS_GRID_IN_L3_IS_USED) {
 
-    client.subscribe(commonTopicStart + "Ac/Grid/L3/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Ac/Grid/L3/Power", [](const String &payload) {
       awaitingDataToBeReceived[2] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1358,7 +1365,7 @@ void MassSubscribe() {
 
   // Solar
   if (GENERAL_SETTINGS_PV_IS_USED) {
-    client.subscribe(commonTopicStart + "Dc/Pv/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Dc/Pv/Power", [](const String &payload) {
       awaitingDataToBeReceived[3] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1377,7 +1384,7 @@ void MassSubscribe() {
 
   // Battery
 
-  client.subscribe(commonTopicStart + "Dc/Battery/Soc", [](const String &payload) {
+  client.subscribe(system0Topic + "Dc/Battery/Soc", [](const String &payload) {
     awaitingDataToBeReceived[4] = false;
     String response = String(payload);
     JsonDocument doc;
@@ -1391,7 +1398,7 @@ void MassSubscribe() {
 
   msTimer.begin(100);
 
-  client.subscribe(commonTopicStart + "Dc/Battery/Power", [](const String &payload) {
+  client.subscribe(system0Topic + "Dc/Battery/Power", [](const String &payload) {
     awaitingDataToBeReceived[5] = false;
     String response = String(payload);
     JsonDocument doc;
@@ -1416,7 +1423,7 @@ void MassSubscribe() {
 
     case 1:
 
-      client.subscribe(commonTopicStart + "Dc/Battery/TimeToGo", [](const String &payload) {
+      client.subscribe(system0Topic + "Dc/Battery/TimeToGo", [](const String &payload) {
         awaitingDataToBeReceived[6] = false;
         String response = String(payload);
         JsonDocument doc;
@@ -1449,7 +1456,7 @@ void MassSubscribe() {
       awaitingDataToBeReceived[6] = false;
       awaitingDataToBeReceived[7] = false;
 
-      client.subscribe(commonTopicStart + "Dc/Battery/Temperature", [](const String &payload) {
+      client.subscribe(system0Topic + "Dc/Battery/Temperature", [](const String &payload) {
         awaitingDataToBeReceived[8] = false;
         String response = String(payload);
         JsonDocument doc;
@@ -1473,7 +1480,7 @@ void MassSubscribe() {
   // AC Out (L1, L2, L3)
 
   if (GENERAL_SETTINGS_AC_OUT_L1_IS_USED) {
-    client.subscribe(commonTopicStart + "Ac/Consumption/L1/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Ac/Consumption/L1/Power", [](const String &payload) {
       awaitingDataToBeReceived[9] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1491,7 +1498,7 @@ void MassSubscribe() {
   };
 
   if (GENERAL_SETTINGS_AC_OUT_L2_IS_USED) {
-    client.subscribe(commonTopicStart + "Ac/Consumption/L2/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Ac/Consumption/L2/Power", [](const String &payload) {
       awaitingDataToBeReceived[10] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1509,7 +1516,7 @@ void MassSubscribe() {
   };
 
   if (GENERAL_SETTINGS_AC_OUT_L3_IS_USED) {
-    client.subscribe(commonTopicStart + "Ac/Consumption/L3/Power", [](const String &payload) {
+    client.subscribe(system0Topic + "Ac/Consumption/L3/Power", [](const String &payload) {
       awaitingDataToBeReceived[11] = false;
       String response = String(payload);
       JsonDocument doc;
@@ -1577,54 +1584,55 @@ void MassUnsubscribe() {
   if (generalDebugOutput)
     Serial.println("Unsubscribing");
 
-  String commonTopicStart = "N/" + VictronInstallationID + "/system/0/";
-  String multiplusModeTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Mode";
-  String solarChargerStateTopic = "N/" + VictronInstallationID + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
-  String commonLedsTopic = "N/" + VictronInstallationID + "/vebus/" + MultiplusThreeDigitID + "/Leds/";
+  String commonTopic = "N/" + VictronInstallationID;
+  String system0Topic = commonTopic + "/system/0/";
+  String multiplusModeTopic = commonTopic + "/vebus/" + MultiplusThreeDigitID + "/Mode";
+  String solarChargerStateTopic = commonTopic + "/solarcharger/" + SolarChargerThreeDigitID + "/State";
+  String ledsTopic = commonTopic + "/vebus/" + MultiplusThreeDigitID + "/Leds/";
 
   if (GENERAL_SETTINGS_GRID_IN_L1_IS_USED)
-    client.unsubscribe(commonTopicStart + "Ac/Grid/L1/Power");
+    client.unsubscribe(system0Topic + "Ac/Grid/L1/Power");
 
   if (GENERAL_SETTINGS_GRID_IN_L2_IS_USED)
-    client.unsubscribe(commonTopicStart + "Ac/Grid/L2/Power");
+    client.unsubscribe(system0Topic + "Ac/Grid/L2/Power");
 
   if (GENERAL_SETTINGS_GRID_IN_L3_IS_USED)
-    client.unsubscribe(commonTopicStart + "Ac/Grid/L3/Power");
+    client.unsubscribe(system0Topic + "Ac/Grid/L3/Power");
 
   if (GENERAL_SETTINGS_PV_IS_USED)
-    client.unsubscribe(commonTopicStart + "Dc/Pv/Power");
+    client.unsubscribe(system0Topic + "Dc/Pv/Power");
 
-  client.unsubscribe(commonTopicStart + "Dc/Battery/Soc");
+  client.unsubscribe(system0Topic + "Dc/Battery/Soc");
 
-  client.unsubscribe(commonTopicStart + "Dc/Battery/Power");
+  client.unsubscribe(system0Topic + "Dc/Battery/Power");
 
   switch (GENERAL_SETTINGS_ADDITIONAL_INFO) {
     case 1:
-      client.unsubscribe(commonTopicStart + "Dc/Battery/TimeToGo");
+      client.unsubscribe(system0Topic + "Dc/Battery/TimeToGo");
       break;
     case 2:
       if (ESSIsBeingUsed) {
-        client.unsubscribe(commonLedsTopic + "Bulk");
-        client.unsubscribe(commonLedsTopic + "Absorption");
-        client.unsubscribe(commonLedsTopic + "Float");
+        client.unsubscribe(ledsTopic + "Bulk");
+        client.unsubscribe(ledsTopic + "Absorption");
+        client.unsubscribe(ledsTopic + "Float");
       } else
         client.unsubscribe(solarChargerStateTopic);
       break;
     case 3:
-      client.unsubscribe(commonTopicStart + "Dc/Battery/Temperature");
+      client.unsubscribe(system0Topic + "Dc/Battery/Temperature");
       break;
     default:
       break;
   };
 
   if (GENERAL_SETTINGS_AC_OUT_L1_IS_USED)
-    client.unsubscribe(commonTopicStart + "Ac/Consumption/L1/Power");
+    client.unsubscribe(system0Topic + "Ac/Consumption/L1/Power");
 
   if (GENERAL_SETTINGS_AC_OUT_L2_IS_USED)
-    client.unsubscribe(commonTopicStart + "Ac/Consumption/L2/Power");
+    client.unsubscribe(system0Topic + "Ac/Consumption/L2/Power");
 
   if (GENERAL_SETTINGS_AC_OUT_L3_IS_USED)
-    client.unsubscribe(commonTopicStart + "Ac/Consumption/L3/Power");
+    client.unsubscribe(system0Topic + "Ac/Consumption/L3/Power");
 
   client.unsubscribe(multiplusModeTopic);
 
@@ -1657,9 +1665,10 @@ void onConnectionEstablished() {
   if (MultiplusThreeDigitID == "+") {
 
     // Let's find the Multiplus three digit ID
-
-    client.subscribe("N/" + VictronInstallationID + "/vebus/+/Mode", [](const String &topic, const String &payload) {
-      client.unsubscribe("N/" + VictronInstallationID + "/vebus/+/Mode");
+    String commonTopic = "N/" + VictronInstallationID;
+    client.subscribe(commonTopic + "/vebus/+/Mode", [](const String &topic, const String &payload) {
+      String commonTopic = "N/" + VictronInstallationID;
+      client.unsubscribe(commonTopic + "/vebus/+/Mode");
       String mytopic = String(topic);
       MultiplusThreeDigitID = mytopic.substring(21, 24);
       MultiplusThreeDigitID.toCharArray(MultiplusThreeDigitIDArray, MultiplusThreeDigitID.length() + 1);
@@ -1679,9 +1688,10 @@ void onConnectionEstablished() {
   if ((SolarChargerThreeDigitID == "+") && (GENERAL_SETTINGS_ADDITIONAL_INFO == 2)) {
 
     // Let's find the solarcharger three digit ID
-
-    client.subscribe("N/" + VictronInstallationID + "/solarcharger/+/Mode", [](const String &topic, const String &payload) {
-      client.unsubscribe("N/" + VictronInstallationID + "/solarcharger/+/Mode");
+    String commonTopic = "N/" + VictronInstallationID;
+    client.subscribe(commonTopic + "/solarcharger/+/Mode", [](const String &topic, const String &payload) {
+      String commonTopic = "N/" + VictronInstallationID;
+      client.unsubscribe(commonTopic + "/solarcharger/+/Mode");
       String mytopic = String(topic);
       SolarChargerThreeDigitID = mytopic.substring(28, 31);
       SolarChargerThreeDigitID.toCharArray(SolarChargerThreeDigitIDArray, SolarChargerThreeDigitID.length() + 1);
