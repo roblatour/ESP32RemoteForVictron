@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.9.3)
+// ESP32 Victron Monitor (version 1.9.4)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.9.4 - Made the use of millis roll over safe
 // version 1.9.3 - removed reference to timezone.h; refactoring of variable names; updated comments for SECRET_SETTINGS_MQTT_Broker
 // version 1.9.2 - after further review removed unneeded millis() roll over logic;
 //                 thanks to Nonstle for pointing this out at: https://github.com/roblatour/ESP32RemoteForVictron/issues/4
@@ -60,7 +61,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.3)";
+const String programVersion = "(Version 1.9.4)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
