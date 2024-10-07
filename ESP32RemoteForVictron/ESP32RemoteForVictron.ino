@@ -156,7 +156,8 @@ const char *tertiaryNTPSever = GENERAL_SETTINGS_TERTIARY_TIME_SERVER;
 const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
 
 bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
-unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0UL;
+unsigned long keepDisplayOnStartTime = 0UL;
+unsigned long keepDisplayOnTimeOut = 0UL;
 
 // report a timeout after this many seconds of no data being received
 const int timeOutInSeconds = 61;
@@ -215,9 +216,7 @@ void ChangeMultiplusMode(multiplusFunction option) {
   // if no choice is made within this timeout period then return to the previous screen without making any changes
   int numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut = 1;
 
-  unsigned long holdkeepTheDisplayOnUntilAtLeastThisTime = keepTheDisplayOnUntilAtLeastThisTime;
-
-  KeepTheDisplayOnForThisManyMinutes(numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut);
+  SetKeepDisplayOnTimeOut(numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut);
 
   // show the opening prompt
 
@@ -234,11 +233,8 @@ void ChangeMultiplusMode(multiplusFunction option) {
     sprite.unloadFont();
     delay(5000);
 
-    // keep the display on for at least one minute more
-    if ((millis() + 60UL * 1000UL) > holdkeepTheDisplayOnUntilAtLeastThisTime)
-      KeepTheDisplayOnForThisManyMinutes(1);
-    else
-      keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+    // keep the display on for one minute
+    SetKeepDisplayOnTimeOut(1);
 
     return;
   };
@@ -267,16 +263,13 @@ void ChangeMultiplusMode(multiplusFunction option) {
   while (digitalRead(bottomButton) == 0)
     msTimer.begin(50);
 
-  if (millis() > keepTheDisplayOnUntilAtLeastThisTime) {
+  if (IsKeepDisplayOnTimedOut()) {
 
     if (generalDebugOutput)
       Serial.println("Timed out waiting for the user to release the button, no change will be applied");
 
-    // keep the display on for at least one minute more
-    if ((millis() + 60UL * 1000UL) > holdkeepTheDisplayOnUntilAtLeastThisTime)
-      KeepTheDisplayOnForThisManyMinutes(1);
-    else
-      keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+    // keep the display on for one minute
+    SetKeepDisplayOnTimeOut(1);
 
     return;
   };
@@ -316,15 +309,15 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
   // wait until a choice is made
 
-  while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0) && (millis() < keepTheDisplayOnUntilAtLeastThisTime))
+  while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0) && !IsKeepDisplayOnTimedOut())
     msTimer.begin(100);
 
-  if (millis() > keepTheDisplayOnUntilAtLeastThisTime) {
+  if (IsKeepDisplayOnTimedOut()) {
 
     if (generalDebugOutput)
       Serial.println("Timed out waiting for the user to make a choice, no change will be applied");
 
-    KeepTheDisplayOnForThisManyMinutes(1);
+    SetKeepDisplayOnTimeOut(1);
     return;
   };
 
@@ -457,11 +450,8 @@ void ChangeMultiplusMode(multiplusFunction option) {
     delay(250);
   };
 
-  // keep the display on for at least one minute more
-  if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
-    KeepTheDisplayOnForThisManyMinutes(1);
-  else
-    keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+  // keep the display on for one minute
+  SetKeepDisplayOnTimeOut(1);
 };
 
 void CheckButtons() {
@@ -493,7 +483,7 @@ void CheckButtons() {
       while (digitalRead(bottomButton) == 0)
         msTimer.begin(50);
 
-      KeepTheDisplayOnForThisManyMinutes(1);
+      SetKeepDisplayOnTimeOut(1);
     };
   };
 }
@@ -612,14 +602,28 @@ bool SetTime() {
   return true;
 }
 
-void KeepTheDisplayOnForThisManyMinutes(int minutes) {
-
-  keepTheDisplayOnUntilAtLeastThisTime = millis() + minutes * 60UL * 1000UL;
+void SetKeepDisplayOnTimeOut(unsigned int minutes) {
+  //Set the timeout after which IsKeepDisplayOnTimedOut() will become true
+  keepDisplayOnTimeOut = (unsigned long) minutes * 60UL * 1000UL;
+  ResetKeepDisplayOnStartTime();
 
   if (generalDebugOutput) {
     Serial.print("Keep display active for this many minutes: ");
     Serial.println(minutes);
   };
+}
+
+void ResetKeepDisplayOnStartTime() {
+  //Reset the start time of the display timeout to now
+  keepDisplayOnStartTime = millis();
+}
+
+bool IsKeepDisplayOnTimedOut() {
+  //Returns true if the display timeout time has passed and false when not.
+  if (millis() - keepDisplayOnStartTime >= keepDisplayOnTimeOut) {
+    return true;
+  }
+  return false;
 }
 
 void RefreshTimeOnceADay(bool forceTimeSet = false) {
@@ -637,7 +641,7 @@ void RefreshTimeOnceADay(bool forceTimeSet = false) {
     } else {
       checkInterval = RETRY_INTERVAL_IN_MILLIS;
       // keep the display on until the time can be successfully set from the NTP server
-      KeepTheDisplayOnForThisManyMinutes(RETRY_INTERVAL_IN_MINUTES + 1);
+      SetKeepDisplayOnTimeOut(RETRY_INTERVAL_IN_MINUTES + 1);
     };
   };
 };
@@ -657,12 +661,12 @@ bool ShouldTheDisplayBeOn() {
 
     if (timeToWake == timeToSleep) {
 
-      // the display should only be set to on if the current time is less than or equal to keepTheDisplayOnUntilAtLeastThisTime
-      returnValue = (millis() <= keepTheDisplayOnUntilAtLeastThisTime);
+      // the display should only be set to on if the KeepDisplayOnTimeOut has not happend yet
+      returnValue = IsKeepDisplayOnTimedOut();
 
     } else {
 
-      if (millis() <= keepTheDisplayOnUntilAtLeastThisTime) {
+      if (!IsKeepDisplayOnTimedOut()) {
 
         theDisplayHadBeenPreviouslyKeptOn = true;
         returnValue = true;
@@ -675,7 +679,7 @@ bool ShouldTheDisplayBeOn() {
         // the detailed time checking logic below is only performed:
         //     once a minute when the seconds first reach zero
         //     or
-        //     when the keepTheDisplayOnUntilAtLeastThisTime had previousily been kept on but no longer needs to be given the passing of time
+        //     when the keepTheDisplayTimeOut had previousily been kept on but no longer needs to be given the passing of time
         //  otherwise
         //     return the previousily returned value
 
@@ -1815,7 +1819,7 @@ void GotoDeepSleep() {
         } else {
 
           int tryAgainInThisManyMinutes = 10;
-          KeepTheDisplayOnForThisManyMinutes(tryAgainInThisManyMinutes);
+          SetKeepDisplayOnTimeOut(tryAgainInThisManyMinutes);
           if (generalDebugOutput) {
             Serial.println("Could not set wakeup timer - network may be down - try again in another ");
             Serial.println(tryAgainInThisManyMinutes);
@@ -2045,7 +2049,7 @@ void SetupDisplay() {
 
   SetDisplayOnAndOffTimes();
 
-  KeepTheDisplayOnForThisManyMinutes(1);
+  SetKeepDisplayOnTimeOut(1);
 
   SetTheDisplayOn(true);
 }
