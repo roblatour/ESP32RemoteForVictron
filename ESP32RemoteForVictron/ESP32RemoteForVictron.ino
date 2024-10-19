@@ -750,7 +750,7 @@ void UpdateDisplay() {
     SetTheDisplayOn(true);
 
   // only update the display when its time has come
-  if (millis() - lastDisplayUpdate >= ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL))
+  if (millis() - lastDisplayUpdate < ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL))
     return;
 
   // only update the display if it is on
