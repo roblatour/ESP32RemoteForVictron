@@ -104,6 +104,7 @@
                                                                                //
                                                                                // 5. regardless of if this option is set to true or false, if you see the message "Awaiting MQTT connection" appear 
                                                                                //    on your screen and stay there it likely means Venus itself is no longer transmitting MQTT data 
+#define GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS_INTERVAL 30000    // Time between keep alive requests in ms
 
 #define GENERAL_SETTINGS_ENABLE_OVER_THE_AIR_UPDATES                   true    // set to true to enable OTA updates, set to false to disable OTA updates
 

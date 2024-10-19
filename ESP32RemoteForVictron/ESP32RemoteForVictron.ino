@@ -1,10 +1,11 @@
-// ESP32 Victron Monitor (version 1.9.3)
+// ESP32 Victron Monitor (version 1.9.4)
 //
 // Copyright Rob Latour, 2024
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
 
+// version 1.9.4 - Made the use of millis roll over safe
 // version 1.9.3 - removed reference to timezone.h; refactoring of variable names; updated comments for SECRET_SETTINGS_MQTT_Broker
 // version 1.9.2 - after further review removed unneeded millis() roll over logic;
 //                 thanks to Nonstle for pointing this out at: https://github.com/roblatour/ESP32RemoteForVictron/issues/4
@@ -60,7 +61,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.3)";
+const String programVersion = "(Version 1.9.4)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -114,10 +115,10 @@ int topButton, bottomButton;
 // Display
 #include <TFT_eSPI.h>              // download and use the entire TFT_eSPI https://github.com/Xinyuan-LilyGO/LilyGo-AMOLED-Series/tree/master/libdeps
 #include "rm67162.h"               // included in the github package for this sketch, but also available from https://github.com/Xinyuan-LilyGO/T-Display-S3-AMOLED/tree/main/examples/factory
-#include "fonts\NotoSansBold15.h"  // included in the github package for this sketch, based on https://fonts.google.com/noto/specimen/Noto+Sans
-#include "fonts\NotoSansBold24.h"  // "
-#include "fonts\NotoSansBold36.h"  // "
-#include "fonts\NotoSansBold72.h"  // "
+#include "fonts/NotoSansBold15.h"  // included in the github package for this sketch, based on https://fonts.google.com/noto/specimen/Noto+Sans
+#include "fonts/NotoSansBold24.h"  // "
+#include "fonts/NotoSansBold36.h"  // "
+#include "fonts/NotoSansBold72.h"  // "
 
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&tft);
@@ -156,8 +157,8 @@ const char *tertiaryNTPSever = GENERAL_SETTINGS_TERTIARY_TIME_SERVER;
 const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
 
 bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
-unsigned long nextTimeCheck = 0UL;
-unsigned long keepTheDisplayOnUntilAtLeastThisTime = 0UL;
+unsigned long keepDisplayOnStartTime = 0UL;
+unsigned long keepDisplayOnTimeOut = 0UL;
 
 // report a timeout after this many seconds of no data being received
 const int timeOutInSeconds = 61;
@@ -216,9 +217,7 @@ void ChangeMultiplusMode(multiplusFunction option) {
   // if no choice is made within this timeout period then return to the previous screen without making any changes
   int numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut = 1;
 
-  unsigned long holdkeepTheDisplayOnUntilAtLeastThisTime = keepTheDisplayOnUntilAtLeastThisTime;
-
-  KeepTheDisplayOnForThisManyMinutes(numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut);
+  SetKeepDisplayOnTimeOut(numberOfMinutesUserHasToMakeAChoiceBeforeTimeOut);
 
   // show the opening prompt
 
@@ -235,11 +234,8 @@ void ChangeMultiplusMode(multiplusFunction option) {
     sprite.unloadFont();
     delay(5000);
 
-    // keep the display on for at least one minute more
-    if ((millis() + 60UL * 1000UL) > holdkeepTheDisplayOnUntilAtLeastThisTime)
-      KeepTheDisplayOnForThisManyMinutes(1);
-    else
-      keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+    // keep the display on for one minute
+    SetKeepDisplayOnTimeOut(1);
 
     return;
   };
@@ -268,16 +264,13 @@ void ChangeMultiplusMode(multiplusFunction option) {
   while (digitalRead(bottomButton) == 0)
     msTimer.begin(50);
 
-  if (millis() > keepTheDisplayOnUntilAtLeastThisTime) {
+  if (IsKeepDisplayOnTimedOut()) {
 
     if (generalDebugOutput)
       Serial.println("Timed out waiting for the user to release the button, no change will be applied");
 
-    // keep the display on for at least one minute more
-    if ((millis() + 60UL * 1000UL) > holdkeepTheDisplayOnUntilAtLeastThisTime)
-      KeepTheDisplayOnForThisManyMinutes(1);
-    else
-      keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+    // keep the display on for one minute
+    SetKeepDisplayOnTimeOut(1);
 
     return;
   };
@@ -317,15 +310,15 @@ void ChangeMultiplusMode(multiplusFunction option) {
 
   // wait until a choice is made
 
-  while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0) && (millis() < keepTheDisplayOnUntilAtLeastThisTime))
+  while ((digitalRead(topButton) != 0) && (digitalRead(bottomButton) != 0) && !IsKeepDisplayOnTimedOut())
     msTimer.begin(100);
 
-  if (millis() > keepTheDisplayOnUntilAtLeastThisTime) {
+  if (IsKeepDisplayOnTimedOut()) {
 
     if (generalDebugOutput)
       Serial.println("Timed out waiting for the user to make a choice, no change will be applied");
 
-    KeepTheDisplayOnForThisManyMinutes(1);
+    SetKeepDisplayOnTimeOut(1);
     return;
   };
 
@@ -458,11 +451,8 @@ void ChangeMultiplusMode(multiplusFunction option) {
     delay(250);
   };
 
-  // keep the display on for at least one minute more
-  if ((millis() + 60 * 1000) > holdkeepTheDisplayOnUntilAtLeastThisTime)
-    KeepTheDisplayOnForThisManyMinutes(1);
-  else
-    keepTheDisplayOnUntilAtLeastThisTime = holdkeepTheDisplayOnUntilAtLeastThisTime;
+  // keep the display on for one minute
+  SetKeepDisplayOnTimeOut(1);
 };
 
 void CheckButtons() {
@@ -494,7 +484,7 @@ void CheckButtons() {
       while (digitalRead(bottomButton) == 0)
         msTimer.begin(50);
 
-      KeepTheDisplayOnForThisManyMinutes(1);
+      SetKeepDisplayOnTimeOut(1);
     };
   };
 }
@@ -613,9 +603,10 @@ bool SetTime() {
   return true;
 }
 
-void KeepTheDisplayOnForThisManyMinutes(int minutes) {
-
-  keepTheDisplayOnUntilAtLeastThisTime = millis() + minutes * 60UL * 1000UL;
+void SetKeepDisplayOnTimeOut(unsigned int minutes) {
+  //Set the timeout after which IsKeepDisplayOnTimedOut() will become true
+  keepDisplayOnTimeOut = (unsigned long) minutes * 60UL * 1000UL;
+  ResetKeepDisplayOnStartTime();
 
   if (generalDebugOutput) {
     Serial.print("Keep display active for this many minutes: ");
@@ -623,23 +614,36 @@ void KeepTheDisplayOnForThisManyMinutes(int minutes) {
   };
 }
 
+void ResetKeepDisplayOnStartTime() {
+  //Reset the start time of the display timeout to now
+  keepDisplayOnStartTime = millis();
+}
+
+bool IsKeepDisplayOnTimedOut() {
+  //Returns true if the display timeout time has passed and false when not.
+  if (millis() - keepDisplayOnStartTime >= keepDisplayOnTimeOut) {
+    return true;
+  }
+  return false;
+}
+
 void RefreshTimeOnceADay(bool forceTimeSet = false) {
 
   const int RETRY_INTERVAL_IN_MINUTES = 20;
   const unsigned long RETRY_INTERVAL_IN_MILLIS = RETRY_INTERVAL_IN_MINUTES * 60UL * 1000UL;
   const unsigned long ONE_DAY_IN_MILLIS = 24UL * 60UL * 60UL * 1000UL;
+  static unsigned long lastTimeCheck = 0UL;
+  static unsigned long checkInterval = 0UL; 
 
-  if (forceTimeSet || (millis() > nextTimeCheck)) {
-
+  if (forceTimeSet || (millis() - lastTimeCheck >= checkInterval)) {
+    lastTimeCheck = millis();
     if (SetTime()) {
-      nextTimeCheck = millis() + ONE_DAY_IN_MILLIS;
-
+      checkInterval = ONE_DAY_IN_MILLIS;
     } else {
-      nextTimeCheck = millis() + RETRY_INTERVAL_IN_MILLIS;
+      checkInterval = RETRY_INTERVAL_IN_MILLIS;
       // keep the display on until the time can be successfully set from the NTP server
-      KeepTheDisplayOnForThisManyMinutes(RETRY_INTERVAL_IN_MINUTES + 1);
+      SetKeepDisplayOnTimeOut(RETRY_INTERVAL_IN_MINUTES + 1);
     };
-  
   };
 };
 
@@ -658,12 +662,12 @@ bool ShouldTheDisplayBeOn() {
 
     if (timeToWake == timeToSleep) {
 
-      // the display should only be set to on if the current time is less than or equal to keepTheDisplayOnUntilAtLeastThisTime
-      returnValue = (millis() <= keepTheDisplayOnUntilAtLeastThisTime);
+      // the display should only be set to on if the KeepDisplayOnTimeOut has not happend yet
+      returnValue = IsKeepDisplayOnTimedOut();
 
     } else {
 
-      if (millis() <= keepTheDisplayOnUntilAtLeastThisTime) {
+      if (!IsKeepDisplayOnTimedOut()) {
 
         theDisplayHadBeenPreviouslyKeptOn = true;
         returnValue = true;
@@ -676,7 +680,7 @@ bool ShouldTheDisplayBeOn() {
         // the detailed time checking logic below is only performed:
         //     once a minute when the seconds first reach zero
         //     or
-        //     when the keepTheDisplayOnUntilAtLeastThisTime had previousily been kept on but no longer needs to be given the passing of time
+        //     when the keepTheDisplayTimeOut had previousily been kept on but no longer needs to be given the passing of time
         //  otherwise
         //     return the previousily returned value
 
@@ -732,7 +736,7 @@ bool ShouldTheDisplayBeOn() {
 
 void UpdateDisplay() {
 
-  static unsigned long nextDisplayUpdate = 0UL;
+  static unsigned long lastDisplayUpdate = 0UL;
   static bool tryToRestoreConnection = true;
   static bool MQTTTransmissionLost = false;
 
@@ -746,7 +750,7 @@ void UpdateDisplay() {
     SetTheDisplayOn(true);
 
   // only update the display when its time has come
-  if (millis() < nextDisplayUpdate)
+  if (millis() - lastDisplayUpdate < ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL))
     return;
 
   // only update the display if it is on
@@ -782,7 +786,7 @@ void UpdateDisplay() {
   // deal with the case that no data has arrived beyond the timeout period
   // see the notes in the general_settings.h file for more information
 
-  if (millis() > (lastMQTTUpdateReceived + timeOutInMilliSeconds)) {
+  if (millis() - lastMQTTUpdateReceived >= timeOutInMilliSeconds) {
 
     sprite.fillSprite(TFT_BLACK);
     sprite.loadFont(NotoSansBold24);
@@ -861,7 +865,7 @@ void UpdateDisplay() {
     };
   };
 
-  nextDisplayUpdate = millis() + ((unsigned long)GENERAL_SETTINGS_SECONDS_BETWEEN_DISPLAY_UPDATES * 1000UL);
+  lastDisplayUpdate = millis();
 
   int x, y;
 
@@ -1153,15 +1157,13 @@ void ResetGlobals() {
 
 void KeepMQTTAlive(bool forceKeepAliveRequestNow = false) {
 
-  static unsigned long nextUpdate = 0UL;
+  static unsigned long lastMqttUpdate = 0UL;
 
   if ((forceKeepAliveRequestNow) || (GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS)) {
 
-    if ((forceKeepAliveRequestNow) || (millis() > nextUpdate)) {
+    if ((forceKeepAliveRequestNow) || (millis() - lastMqttUpdate >= GENERAL_SETTINGS_SEND_PERIODICAL_KEEP_ALIVE_REQUESTS_INTERVAL)) {
 
-      const unsigned long secondsBetweenKeepAliveRequests = 30UL;
-
-      nextUpdate = millis() + secondsBetweenKeepAliveRequests * 1000UL;
+      lastMqttUpdate = millis();   
 
       client.publish("R/" + VictronInstallationID + "/keepalive", "");
 
@@ -1818,7 +1820,7 @@ void GotoDeepSleep() {
         } else {
 
           int tryAgainInThisManyMinutes = 10;
-          KeepTheDisplayOnForThisManyMinutes(tryAgainInThisManyMinutes);
+          SetKeepDisplayOnTimeOut(tryAgainInThisManyMinutes);
           if (generalDebugOutput) {
             Serial.println("Could not set wakeup timer - network may be down - try again in another ");
             Serial.println(tryAgainInThisManyMinutes);
@@ -2048,7 +2050,7 @@ void SetupDisplay() {
 
   SetDisplayOnAndOffTimes();
 
-  KeepTheDisplayOnForThisManyMinutes(1);
+  SetKeepDisplayOnTimeOut(1);
 
   SetTheDisplayOn(true);
 }
