@@ -34,10 +34,10 @@ MIT
 
 The open source Arudion code for the ESP32 Remote for Victron project.
 
-## LilyGo LilyGo T-Display S3 AMOLED
+## LilyGo LilyGo T-Display S3 AMOLED (non touch)
    
-   https://www.lilygo.cc/en-ca/products/t-display-s3-amoled (either the v1 or v2 version) (not an affiliate link)   
-  
+   https://www.lilygo.cc/en-ca/products/t-display-s3-amoled (either the v1 or v2 version) (not an affiliate link)
+    
 ## 3D printable cases 
  
 3D printable case for a LilyGo T-Display S3 AMOLED v1 (not touch version, no pins):
