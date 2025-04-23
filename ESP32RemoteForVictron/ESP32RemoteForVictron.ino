@@ -1,9 +1,10 @@
-// ESP32 Victron Monitor (version 1.9.5)
+// ESP32 Victron Monitor (version 1.9.6)
 //
 // Copyright Rob Latour, 2025
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.9.6 - corrected problem with displaying total AC Load; ShouldTheDisplayBeOn tweaked to ensure SleepTime is correctly calculated
 // version 1.9.5 - adjusted calculation of solar watts and total grid watts when over 100kw to avoid displaying wrong results if updates not received when expected
 // version 1.9.4 - Made the use of millis roll over safe
 // version 1.9.3 - removed reference to timezone.h; refactoring of variable names; updated comments for SECRET_SETTINGS_MQTT_Broker
@@ -61,7 +62,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.5)";
+const String programVersion = "(Version 1.9.6)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -158,7 +159,7 @@ const char *secondaryNTPServer = GENERAL_SETTINGS_SECONDARY_TIME_SERVER;
 const char *tertiaryNTPSever = GENERAL_SETTINGS_TERTIARY_TIME_SERVER;
 const char *timeZone = GENERAL_SETTINGS_MY_TIME_ZONE;
 
-bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY;
+bool turnOnDisplayAtSpecificTimesOnly = GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY;
 unsigned long keepDisplayOnStartTime = 0UL;
 unsigned long keepDisplayOnTimeOut = 0UL;
 
@@ -726,8 +727,8 @@ void RefreshTimeOnceADay(bool forceTimeSet = false)
 bool ShouldTheDisplayBeOn()
 {
 
-  static int timeToWake = wakeHour * 60 + wakeMinute;
-  static int timeToSleep = sleepHour * 60 + sleepMinute;
+  int timeToWake = wakeHour * 60 + wakeMinute;
+  int timeToSleep = sleepHour * 60 + sleepMinute;
 
   static int lastMinuteChecked = -1;
   static bool theDisplayHadBeenPreviouslyKeptOn = true;
@@ -741,7 +742,7 @@ bool ShouldTheDisplayBeOn()
     if (timeToWake == timeToSleep)
     {
 
-      // the display should only be set to on if the KeepDisplayOnTimeOut has not happend yet
+      // the display should only be set to on if the KeepDisplayOnTimeOut has not happened yet
       returnValue = IsKeepDisplayOnTimedOut();
     }
     else
@@ -762,9 +763,9 @@ bool ShouldTheDisplayBeOn()
         // the detailed time checking logic below is only performed:
         //     once a minute when the seconds first reach zero
         //     or
-        //     when the keepTheDisplayTimeOut had previousily been kept on but no longer needs to be given the passing of time
+        //     when the keepTheDisplayTimeOut had previously been kept on but no longer needs to be given the passing of time
         //  otherwise
-        //     return the previousily returned value
+        //     return the previously returned value
 
         int iSecond = second(utc_now);
 
@@ -987,13 +988,13 @@ void UpdateDisplay()
   else
     chargerStatus = "off";
 
-  String inverterSatus;
+  String inverterStatus;
   if (currentMultiplusMode == Unknown)
-    inverterSatus = "?";
+    inverterStatus = "?";
   else if ((currentMultiplusMode == On) || (currentMultiplusMode == InverterOnly))
-    inverterSatus = "on";
+    inverterStatus = "on";
   else
-    inverterSatus = "off";
+    inverterStatus = "off";
 
   if (GENERAL_SETTINGS_USB_ON_THE_LEFT)
     x = 0;
@@ -1009,7 +1010,7 @@ void UpdateDisplay()
   if (GENERAL_SETTINGS_SHOW_INVERTER_MODE)
   {
     y = TFT_HEIGHT - 30;
-    sprite.drawString("Inverter " + inverterSatus, x, y);
+    sprite.drawString("Inverter " + inverterStatus, x, y);
   };
 
   sprite.unloadFont();
@@ -1090,8 +1091,8 @@ void UpdateDisplay()
   float totalACConsumptionWatts = int(ACOutL1Watts + ACOutL2Watts + ACOutL3Watts);
   if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && (totalACConsumptionWatts >= 1000.0F))
   {
-    float TotalACConsumptionWatts = TotalACConsumptionWatts / 1000.0F;
-    sprite.drawString(ConvertToStringWithAFixedNumberOfDecimalPlaces(TotalACConsumptionWatts, GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING) + " KW", x, y);
+    totalACConsumptionWatts = totalACConsumptionWatts / 1000.0F;
+    sprite.drawString(ConvertToStringWithAFixedNumberOfDecimalPlaces(totalACConsumptionWatts, GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING) + " KW", x, y);
   }
   else
   {
@@ -1103,18 +1104,18 @@ void UpdateDisplay()
 
   // show battery info
 
-  int midX, midY, outterRadius, innerRadius, startAngle, endAngle;
+  int midX, midY, outerRadius, innerRadius, startAngle, endAngle;
   unsigned short batteryColour;
 
   midX = TFT_WIDTH / 2;
   midY = TFT_HEIGHT / 2;
 
   if (midX < midY)
-    outterRadius = midX;
+    outerRadius = midX;
   else
-    outterRadius = midY;
+    outerRadius = midY;
 
-  innerRadius = outterRadius - 8;
+  innerRadius = outerRadius - 8;
 
   startAngle = 180;
   endAngle = int(batterySOC * 3.6 + 180) % 360;
@@ -1132,7 +1133,7 @@ void UpdateDisplay()
     batteryColour = TFT_GREEN;
   };
 
-  sprite.drawSmoothArc(midX, midY, outterRadius, innerRadius, startAngle, endAngle, batteryColour, TFT_BLACK);
+  sprite.drawSmoothArc(midX, midY, outerRadius, innerRadius, startAngle, endAngle, batteryColour, TFT_BLACK);
 
   sprite.loadFont(NotoSansBold72);
   sprite.setTextDatum(MC_DATUM);
@@ -1802,7 +1803,7 @@ void MassUnsubscribe()
 void onConnectionEstablished()
 {
 
-  // note: this subroutine uses recurrsion to discover the VictronInstallationID, MultiplusThreeDigitID and (if needed) SolarChargerThreeDigitID
+  // note: this subroutine uses recursion to discover the VictronInstallationID, MultiplusThreeDigitID and (if needed) SolarChargerThreeDigitID
 
   if (VictronInstallationID == "+")
   {
@@ -1899,10 +1900,10 @@ void SetupWiFiAndMQTT()
   if (generalDebugOutput)
     Serial.println("Setting up Wi-Fi and MQTT");
 
-  // if GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY is true
+  // if GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY is true
   // then enable the on-connection event in order that the time from an NTP server once the Wifi connection has been established
   // otherwise this is not needed
-  if (GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY)
+  if (GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY)
     WiFi.onEvent(onWiFiConnectionEstablished, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
   if (GENERAL_SETTINGS_ENABLE_OVER_THE_AIR_UPDATES)

@@ -37,9 +37,9 @@
 
 #define GENERAL_SETTINGS_SHOW_SPLASH_SCREEN                            true    // set to true show the splash screen on initial startup, set to false to not show the splash screen
 
-#define GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY        false    // set to true to turn on the display between the times indentified below, set to false to leave the display always on
+#define GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY       false    // set to true to turn on the display between the times indentified below, set to false to leave the display always on
                                                                                //
-                                                                               // if GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY is true, then the following will also be needed:
+                                                                               // if GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY is true, then the following will also be needed:
                                                                                //      
 #define GENERAL_SETTINGS_USE_DEEP_SLEEP                                true    //     set to true to use deep sleep (see notes below)
                                                                                //                                                                                    
