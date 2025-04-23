@@ -2311,7 +2311,7 @@ void SetDebugLevel()
 void SetWakeUpButton()
 {
 
-  if ((GENERAL_SETTINGS_TURN_ON_DISPAY_AT_SPECIFIC_TIMES_ONLY) && (GENERAL_SETTINGS_USE_DEEP_SLEEP))
+  if ((GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY) && (GENERAL_SETTINGS_USE_DEEP_SLEEP))
   {
 
     // set wakeup button; sadly while the button tied to GPIO 0 can be used for this, the button tied to GPIO 21 cannot
