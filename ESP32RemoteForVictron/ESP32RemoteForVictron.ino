@@ -1176,7 +1176,17 @@ void UpdateDisplay()
     sprite.loadFont(NotoSansBold15);
     int degreePosx = sprite.textWidth(temperatureString) / 2 + 4;
     sprite.drawString(String("o"), midX + degreePosx, midY + 43);
-  };
+  }  
+  else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 4) 
+  {
+
+    //show battery power
+    if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && ((batteryPower >= 1000.0F) || (batteryPower <= -1000.0F))) {
+      sprite.drawString(ConvertToStringWithAFixedNumberOfDecimalPlaces(batteryPower / 1000.0F, GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING) + " kW", midX, midY + 50);
+    } else {
+      sprite.drawString(String(int(batteryPower)) + " W", midX, midY + 50);
+    };
+  }
 
   sprite.unloadFont();
 
@@ -1618,6 +1628,13 @@ void MassSubscribe()
 
     msTimer.begin(100);
     break;
+
+    case 4:
+
+      awaitingDataToBeReceived[6] = false;
+      awaitingDataToBeReceived[7] = false;
+      awaitingDataToBeReceived[8] = false;
+      break;
 
   default:
     break;
