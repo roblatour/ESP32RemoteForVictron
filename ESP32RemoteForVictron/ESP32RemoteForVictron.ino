@@ -1,9 +1,10 @@
-// ESP32 Victron Monitor (version 1.9.6)
+// ESP32 Victron Monitor (version 1.9.7)
 //
 // Copyright Rob Latour, 2025
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.9.7 - added option to show wattage coming into / going out of battery
 // version 1.9.6 - corrected problem with displaying total AC Load; ShouldTheDisplayBeOn tweaked to ensure SleepTime is correctly calculated
 // version 1.9.5 - adjusted calculation of solar watts and total grid watts when over 100kw to avoid displaying wrong results if updates not received when expected
 // version 1.9.4 - Made the use of millis roll over safe
@@ -62,7 +63,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.6)";
+const String programVersion = "(Version 1.9.7)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -1176,7 +1177,17 @@ void UpdateDisplay()
     sprite.loadFont(NotoSansBold15);
     int degreePosx = sprite.textWidth(temperatureString) / 2 + 4;
     sprite.drawString(String("o"), midX + degreePosx, midY + 43);
-  };
+  }  
+  else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 4) 
+  {
+
+    //show battery power
+    if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && ((batteryPower >= 1000.0F) || (batteryPower <= -1000.0F))) {
+      sprite.drawString(ConvertToStringWithAFixedNumberOfDecimalPlaces(batteryPower / 1000.0F, GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING) + " kW", midX, midY + 50);
+    } else {
+      sprite.drawString(String(int(batteryPower)) + " W", midX, midY + 50);
+    };
+  }
 
   sprite.unloadFont();
 
@@ -1618,6 +1629,13 @@ void MassSubscribe()
 
     msTimer.begin(100);
     break;
+
+    case 4:
+
+      awaitingDataToBeReceived[6] = false;
+      awaitingDataToBeReceived[7] = false;
+      awaitingDataToBeReceived[8] = false;
+      break;
 
   default:
     break;
