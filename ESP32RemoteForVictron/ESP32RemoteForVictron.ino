@@ -1,9 +1,10 @@
-// ESP32 Victron Monitor (version 1.9.6)
+// ESP32 Victron Monitor (version 1.9.7)
 //
 // Copyright Rob Latour, 2025
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.9.7 - added option to show wattage coming into / going out of battery
 // version 1.9.6 - corrected problem with displaying total AC Load; ShouldTheDisplayBeOn tweaked to ensure SleepTime is correctly calculated
 // version 1.9.5 - adjusted calculation of solar watts and total grid watts when over 100kw to avoid displaying wrong results if updates not received when expected
 // version 1.9.4 - Made the use of millis roll over safe
@@ -62,7 +63,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.6)";
+const String programVersion = "(Version 1.9.7)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
