@@ -1,9 +1,10 @@
-// ESP32 Victron Monitor (version 1.9.7)
+// ESP32 Victron Monitor (version 1.9.8)
 //
 // Copyright Rob Latour, 2025
 // License: MIT
 // https://github.com/roblatour/ESP32RemoteForVictron
 //
+// version 1.9.8 - added option to manually set Energy Storage System (ESS) as true (as an alternative to automatic detection)
 // version 1.9.7 - added option to show wattage coming into / going out of battery
 // version 1.9.6 - corrected problem with displaying total AC Load; ShouldTheDisplayBeOn tweaked to ensure SleepTime is correctly calculated
 // version 1.9.5 - adjusted calculation of solar watts and total grid watts when over 100kw to avoid displaying wrong results if updates not received when expected
@@ -28,7 +29,7 @@
 // Compile and upload using Arduino IDE (2.3.2 or greater)
 //
 // Physical board:                  LILYGO T-Display-S3 AMOLED
-// Arduino - Board Manager:         esp32 by Espressif Systems : version 2.0.11  (ref: https://forum.arduino.cc/t/esp32-s3-sudden-compile-error/1177237/24)
+// Arduino - Board Manager:         esp32 by Espressif Systems : version 2.0.11 ( ref: https://forum.arduino.cc/t/esp32-s3-sudden-compile-error/1177237/24 )
 // Arduino Board selection:         ESP32S3 Dev Module
 //
 // Arduino - File - Preferences - Additional Board Manager URLs: https://dl.espressif.com/dl/package_esp32_index.json
@@ -63,7 +64,7 @@
 
 // Globals
 const String programName = "ESP32 Remote for Victron";
-const String programVersion = "(Version 1.9.7)";
+const String programVersion = "(Version 1.9.8)";
 const String programURL = "https://github.com/roblatour/ESP32RemoteForVictron";
 
 RTC_DATA_ATTR bool initialStartupShowSplashScreen = true;
@@ -143,7 +144,7 @@ EspMQTTClient client(
 unsigned long lastMQTTUpdateReceived = 0UL;
 
 // JSON
-#include <ArduinoJson.h> // Ardiuno Library Manager, by Benoit Blanchon, https://arduinojson.org/?utm_source=meta&utm_medium=library.properties (v7.4.1)
+#include <ArduinoJson.h> // Ardiuno Library Manager, by Benoit Blanchon, https://arduinojson.org/?utm_source=meta&utm_medium=library.properties (v7.4.2)
 
 // Non blocking delay library
 #include "FireTimer.h" // Ardiuno Library Manager, by PowerBroker2, https://github.com/PowerBroker2/FireTimer (v1.0.5)
@@ -151,9 +152,12 @@ FireTimer msTimer;
 
 // Time stuff
 #include <ESP32Time.h>
-#include <TimeLib.h> // version 1.6.1  https://www.arduino.cc/reference/en/libraries/time/
+#include <TimeLib.h> // version 1.6.1  https://www.arduino.cc/reference/en/libraries/time/ https://github.com/PaulStoffregen/Time
 #include <WiFi.h>
 #include <time.h>
+
+// OTA
+// ensure Arduino_ESP32_OTA by Arduio is installed in your library manager
 
 const char *primaryNTPServer = GENERAL_SETTINGS_PRIMARY_TIME_SERVER;
 const char *secondaryNTPServer = GENERAL_SETTINGS_SECONDARY_TIME_SERVER;
@@ -1177,14 +1181,17 @@ void UpdateDisplay()
     sprite.loadFont(NotoSansBold15);
     int degreePosx = sprite.textWidth(temperatureString) / 2 + 4;
     sprite.drawString(String("o"), midX + degreePosx, midY + 43);
-  }  
-  else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 4) 
+  }
+  else if (GENERAL_SETTINGS_ADDITIONAL_INFO == 4)
   {
 
-    //show battery power
-    if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && ((batteryPower >= 1000.0F) || (batteryPower <= -1000.0F))) {
+    // show battery power
+    if (GENERAL_SETTINGS_IF_OVER_1000_WATTS_REPORT_KW && ((batteryPower >= 1000.0F) || (batteryPower <= -1000.0F)))
+    {
       sprite.drawString(ConvertToStringWithAFixedNumberOfDecimalPlaces(batteryPower / 1000.0F, GENERAL_SETTINGS_NUMBER_DECIMAL_PLACES_FOR_KW_REPORTING) + " kW", midX, midY + 50);
-    } else {
+    }
+    else
+    {
       sprite.drawString(String(int(batteryPower)) + " W", midX, midY + 50);
     };
   }
@@ -1286,6 +1293,11 @@ void ResetGlobals()
   ACOutL3Watts = 0.0;
 
   currentMultiplusMode = Unknown;
+
+  // Generally the use of ESS will be determined automatically with its default value being false
+  // However, it can be overriden in the general settings by setting GENERAL_SETTINGS_ESS_IS_BEING_USED true
+  if (GENERAL_SETTINGS_ESS_IS_BEING_USED)
+    ESSIsBeingUsed = GENERAL_SETTINGS_ESS_IS_BEING_USED;
 
   chargingState = "";
 };
@@ -1630,12 +1642,12 @@ void MassSubscribe()
     msTimer.begin(100);
     break;
 
-    case 4:
+  case 4:
 
-      awaitingDataToBeReceived[6] = false;
-      awaitingDataToBeReceived[7] = false;
-      awaitingDataToBeReceived[8] = false;
-      break;
+    awaitingDataToBeReceived[6] = false;
+    awaitingDataToBeReceived[7] = false;
+    awaitingDataToBeReceived[8] = false;
+    break;
 
   default:
     break;
@@ -1870,7 +1882,7 @@ void onConnectionEstablished()
   if ((SolarChargerThreeDigitID == "+") && (GENERAL_SETTINGS_ADDITIONAL_INFO == 2))
   {
 
-    // Let's find the solarcharger three digit ID
+    // Let's find the solar charger's three digit ID
     String commonTopic = "N/" + VictronInstallationID;
     client.subscribe(commonTopic + "/solarcharger/+/Mode", [](const String &topic, const String &payload)
                      {

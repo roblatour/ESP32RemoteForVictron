@@ -36,6 +36,8 @@
 #define GENERAL_SETTINGS_AC_OUT_L2_IS_USED                             true    // set to true if AC OUT L2 is used in your installation, otherwise set to false
 #define GENERAL_SETTINGS_AC_OUT_L3_IS_USED                             true    // set to true if AC OUT L3 is used in your installation, otherwise set to false
 
+#define GENERAL_SETTINGS_ESS_IS_BEING_USED                            false    // set to true if your system is setup to use Victron's Energy Storage System 
+
 #define GENERAL_SETTINGS_SHOW_SPLASH_SCREEN                            true    // set to true show the splash screen on initial startup, set to false to not show the splash screen
 
 #define GENERAL_SETTINGS_TURN_ON_DISPLAY_AT_SPECIFIC_TIMES_ONLY       false    // set to true to turn on the display between the times indentified below, set to false to leave the display always on

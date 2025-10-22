@@ -4,7 +4,7 @@ Rob Latour, 2025
 
 ## Project outline
 
-ESP32 Remote for Victron is an open source project for monitoring and controling a Victron Multiplus II system with a LilyGo T-Display S3 AMOLED.
+ESP32 Remote for Victron is an open source project for monitoring and controlling a Victron Multiplus II system with a LilyGo T-Display S3 AMOLED.
 
 ![components](https://github.com/roblatour/ESP32RemoteForVictron/blob/main/images/image01.jpg)
 
@@ -32,7 +32,7 @@ MIT
 
 ## This repo includes
 
-The open source Arudion code for the ESP32 Remote for Victron project.
+The open source Arduino code for the ESP32 Remote for Victron project.
 
 ## LilyGo LilyGo T-Display S3 AMOLED (non touch)
    
